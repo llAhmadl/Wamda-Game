@@ -12,7 +12,10 @@
 <body>
     <header class="site-header">
         <div class="header-inner">
-            <span class="brand">وَمْضة</span>
+            <details id="site-menu" class="site-menu">
+                <summary aria-label="فتح القائمة"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></summary>
+                <nav class="menu-panel" aria-label="إعدادات اللعبة">
+                    <button id="rename-button" class="menu-item" type="button">تغيير الاسم</button>
             <button id="theme-toggle" class="theme-toggle" type="button" aria-label="التبديل إلى الوضع الداكن">
                 <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M20.5 13A8.6 8.6 0 0 1 11 3.5 8.6 8.6 0 1 0 20.5 13Z"/>
@@ -22,6 +25,10 @@
                 </svg>
                 <span id="theme-label">الوضع الداكن</span>
             </button>
+                    <button id="developer-button" class="menu-item" type="button">وضع المطور</button>
+                </nav>
+            </details>
+            <span class="brand">وَمْضة</span>
         </div>
     </header>
 
@@ -31,7 +38,7 @@
         <section id="name-screen" class="screen" aria-labelledby="name-title">
             <div class="screen-heading">
                 <h1 id="name-title" tabindex="-1">فكّر بسرعة، وأجب بلمحة.</h1>
-                <p>3 جولات، في كل جولة 5 أسئلة، ولكل سؤال 20 ثانية.</p>
+                <p>3 جولات، في كل جولة 5 أسئلة، ولكل سؤال 20 ثانية. أول إجابة صحيحة تكسب النقطة.</p>
             </div>
             <div class="panel">
                 <label for="name-input">اسمك</label>
@@ -115,8 +122,73 @@
             </div>
         </section>
     </main>
+
+    <dialog id="rename-dialog" class="settings-dialog" aria-labelledby="rename-title">
+        <form id="rename-form">
+            <div class="dialog-heading"><h2 id="rename-title">تغيير الاسم</h2><button class="dialog-close" type="button" data-close="rename-dialog" aria-label="إغلاق">×</button></div>
+            <label for="rename-input">اسمك الجديد</label>
+            <input id="rename-input" maxlength="20" required autocomplete="nickname" dir="auto">
+            <p id="rename-error" class="error" role="alert"></p>
+            <button class="primary full-width field-action" type="submit">حفظ الاسم</button>
+        </form>
+    </dialog>
+
+    <dialog id="developer-dialog" class="settings-dialog developer-dialog" aria-labelledby="developer-title">
+        <div class="dialog-heading"><h2 id="developer-title">وضع المطور</h2><button class="dialog-close" type="button" data-close="developer-dialog" aria-label="إغلاق">×</button></div>
+        <form id="developer-login">
+            <p class="hint">أدخل كود المطور لإدارة الأسئلة ومتابعة اللاعبين.</p>
+            <label for="developer-code">كود المطور</label>
+            <input id="developer-code" type="password" maxlength="256" required autocomplete="current-password">
+            <button class="primary full-width field-action" type="submit">دخول</button>
+        </form>
+        <p id="developer-message" class="helper-message" role="status"></p>
+        <div id="developer-content" class="hidden">
+            <div class="admin-toolbar"><button id="admin-refresh" class="secondary compact-button" type="button">تحديث</button><button id="admin-logout" class="text-button" type="button">تسجيل الخروج</button></div>
+            <section class="admin-section" aria-labelledby="online-title">
+                <h3 id="online-title">المتصلون الآن</h3>
+                <p id="online-count" class="helper-message"></p>
+                <div id="online-players" class="admin-list"></div>
+            </section>
+            <section class="admin-section" aria-labelledby="banks-title">
+                <h3 id="banks-title">بنوك الأسئلة</h3>
+                <p id="storage-status" class="helper-message"></p>
+                <label for="bank-select">البنك</label><select id="bank-select"></select>
+                <p id="bank-status" class="helper-message"></p>
+                <button id="activate-bank" class="secondary full-width field-action" type="button">استخدام هذا البنك للمباريات الجديدة</button>
+                <form id="bank-form" class="admin-inline">
+                    <label for="bank-name">إنشاء بنك جديد</label>
+                    <input id="bank-name" required maxlength="60" placeholder="مثال: معلومات عامة">
+                    <button class="secondary full-width field-action" type="submit">إنشاء البنك</button>
+                </form>
+                <details class="admin-import"><summary>استيراد وتصدير الأسئلة</summary>
+                    <p class="helper-message">يمكنك تصدير بنك، تعديل ملفه، ثم استيراده. يُضاف محتوى الملف إلى البنك المحدد.</p>
+                    <button id="export-bank" class="secondary full-width field-action" type="button">تنزيل نسخة JSON</button>
+                    <label for="import-bank">إضافة أسئلة من ملف JSON</label>
+                    <input id="import-bank" type="file" accept=".json,application/json">
+                </details>
+            </section>
+            <section class="admin-section" aria-labelledby="question-editor-title">
+                <h3 id="question-editor-title">إضافة سؤال</h3>
+                <form id="question-form">
+                    <label for="edit-question">السؤال</label><textarea id="edit-question" required maxlength="300" rows="2"></textarea>
+                    <div class="question-fields">
+                        <label>A<input id="edit-choice-0" required maxlength="160"></label>
+                        <label>B<input id="edit-choice-1" required maxlength="160"></label>
+                        <label>C<input id="edit-choice-2" required maxlength="160"></label>
+                        <label>D<input id="edit-choice-3" required maxlength="160"></label>
+                    </div>
+                    <label for="edit-correct">الإجابة الصحيحة</label>
+                    <select id="edit-correct"><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select>
+                    <button class="primary full-width field-action" type="submit">حفظ السؤال</button>
+                    <button id="cancel-edit" class="text-button full-width hidden" type="button">إلغاء التعديل</button>
+                </form>
+                <div id="bank-questions" class="admin-list"></div>
+            </section>
+        </div>
+    </dialog>
     <noscript><p class="noscript-message">فعّل جافاسكربت للعب وَمْضة.</p></noscript>
     <script src="/socket.io/socket.io.js"></script>
     <script src="app.js"></script>
+    <script src="settings.js"></script>
 </body>
 </html>

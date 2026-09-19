@@ -265,3 +265,15 @@ test("reduced motion shows final scores immediately and ties sort alphabetically
     assert.deepEqual(rows.map(row => row.children[0].textContent), ["1", "1", "3"]);
     assert.equal(ui.intervals.size, 0);
 });
+
+
+test("another player wins: lock every choice without showing a false timeout", () => {
+    const ui = setup();
+    ui.socket.receive("question", { questionId: 0, number: 1, total: 5, round: 1, rounds: 3, question: "سؤال", choices: ["الأول", "الثاني"], duration: 20 });
+    ui.socket.receive("questionClosed", { correctIndex: 1, lastInRound: false, reason: "winner", winner: { id: "guest", name: "علي" } });
+    assert.ok(ui.el("choices").children.every(button => button.disabled));
+    assert.ok(ui.el("choices").children[1].classList.contains("is-correct"));
+    assert.equal(ui.el("timer").textContent, "20");
+    assert.equal(ui.el("answer-message").textContent, "حسم علي السؤال.");
+    assert.equal(ui.intervals.size, 0);
+});

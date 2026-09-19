@@ -147,6 +147,7 @@ socket.on("connect_error", () => {
 socket.on("connect", () => {
     connectionMessage.textContent = "";
     connectionMessage.classList.add("hidden");
+    if (playerName) socket.emit("changeName", { name: playerName }, () => {});
 });
 
 function isConnected() {
@@ -174,6 +175,7 @@ function enterHome() {
     }
 
     playerName = name;
+    if (socket.connected) socket.emit("changeName", { name }, () => {});
 
     nameError.textContent = "";
     nameInput.removeAttribute("aria-invalid");
@@ -534,7 +536,14 @@ socket.on("questionClosed", data => {
         button.disabled = true;
         if (index === data.correctIndex) button.classList.add("is-correct");
     });
-    if (!choicesContainer.querySelector(".selected")) {
+    const selected = choicesContainer.querySelector(".selected");
+    if (selected) {
+        const index = Array.from(choicesContainer.querySelectorAll("button")).indexOf(selected);
+        if (index !== data.correctIndex) selected.classList.add("is-wrong");
+    }
+    if (data.winner) {
+        answerMessage.textContent = data.winner.id === socket.id ? "سبقت الجميع! +1 نقطة" : `حسم ${data.winner.name} السؤال.`;
+    } else if (data.reason === "timeout" || !data.reason) {
         timerElement.textContent = "0";
         answerMessage.textContent = "انتهى الوقت.";
     }

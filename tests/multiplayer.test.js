@@ -2,6 +2,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
+const { mkdtemp, rm } = require("node:fs/promises");
+const os = require("node:os");
 
 // Use Socket.IO's bundled client, so no new application dependency is needed.
 // Native WebSocket is available in Node 22+.
@@ -28,7 +30,9 @@ function request(socket, event, payload) {
 
 test("two real clients: all questions, scores, host transfer and question timeout", { timeout: 35000 }, async t => {
     assert.ok(typeof WebSocket !== "undefined", "Run these tests with Node.js 22 or newer.");
-    const server = spawn(process.execPath, ["server.js"], { cwd: root, env: { ...process.env, PORT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), "wamda-game-"));
+    t.after(() => rm(dataDir, { recursive: true, force: true }));
+    const server = spawn(process.execPath, ["server.js"], { cwd: root, env: { ...process.env, PORT: "0", DATABASE_URL: "", RENDER: "", BANKS_FILE: path.join(dataDir, "banks.json") }, stdio: ["ignore", "pipe", "pipe"] });
     let baseUrl;
     const clients = [];
     t.after(() => { for (const client of clients) client.disconnect(); server.kill(); });
@@ -50,7 +54,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
 
     const versionResponse = await fetch(baseUrl + "/api/version");
     assert.equal(versionResponse.headers.get("cache-control"), "no-store");
-    assert.deepEqual(await versionResponse.json(), { version: "wamda-rounds-v1", rounds: 3, questionsPerRound: 5, duration: 20 });
+    assert.deepEqual(await versionResponse.json(), { version: "wamda-first-correct-v2", rounds: 3, questionsPerRound: 5, duration: 20 });
 
     async function connect() {
         const socket = io(baseUrl, { transports: ["websocket"], autoConnect: false, reconnection: false });
@@ -76,6 +80,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
     host.emit("startGame", { code: created.code });
     const answers = [1,2,0,1,0,1,2,0,3,1,2,0,3,1,2,0,3,1,2,0,1,2,0,3,1,2,0,3,1,2];
     let finish;
+    const scoresExpected = new Map([[host.id, 0], [guest.id, 0]]);
     for (let round = 0; round < 15; round++) {
         const [a, b] = await questions;
         assert.deepEqual(a, b, "Both clients receive the same question");
@@ -92,17 +97,24 @@ test("two real clients: all questions, scores, host transfer and question timeou
             assert.equal(rejected.message, "بدأت اللعبة بالفعل.");
         }
 
-        const closed = nextEvent(host, "questionClosed");
-        const answerResults = Promise.all([nextEvent(host, "answerResult"), nextEvent(guest, "answerResult")]);
-        host.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: answers[round] });
-        // A repeated click must not score twice.
-        host.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: answers[round] });
-        guest.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: round < 2 ? answers[round] : (answers[round] + 1) % 4 });
-        const [hostResult, guestResult] = await answerResults;
-        assert.equal(hostResult.correct, true);
-        assert.equal(guestResult.correct, round < 2);
-        assert.equal(hostResult.correctIndex, answers[round]);
-        await closed;
+        const closed = Promise.all([nextEvent(host, "questionClosed"), nextEvent(guest, "questionClosed")]);
+        if (round === 0) {
+            const wrong = nextEvent(guest, "answerResult");
+            guest.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: (answers[round] + 1) % 4 });
+            assert.equal((await wrong).correct, false, "A wrong answer must not award a point or end the question");
+        }
+        // Both clients race with a correct answer. The server must choose exactly one.
+        const first = round === 1 ? guest : host;
+        const second = round === 1 ? host : guest;
+        first.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: answers[round] });
+        second.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: answers[round] });
+        first.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: answers[round] });
+        const [hostClosed, guestClosed] = await closed;
+        assert.deepEqual(hostClosed, guestClosed);
+        assert.equal(hostClosed.reason, "winner");
+        assert.equal(hostClosed.correctIndex, answers[round]);
+        assert.ok(scoresExpected.has(hostClosed.winner.id));
+        scoresExpected.set(hostClosed.winner.id, scoresExpected.get(hostClosed.winner.id) + 1);
         let autoAdvanced = false;
         const onQuestion = () => { autoAdvanced = true; };
         host.on("question", onQuestion);
@@ -117,7 +129,8 @@ test("two real clients: all questions, scores, host transfer and question timeou
             host.emit("nextQuestion", { code: created.code, questionId: round });
             const scores = await results;
             assert.equal(scores.round, (round + 1) / 5);
-            assert.equal(scores.ranking[0].score, round + 1);
+            assert.equal(scores.ranking.reduce((sum, p) => sum + p.score, 0), round + 1);
+            scores.ranking.forEach(p => assert.equal(p.score, scoresExpected.get(p.id)));
             questions = Promise.all([nextEvent(host, "question"), nextEvent(guest, "question")]);
             host.emit("nextRound", { code: created.code, round: scores.round });
             continue;
@@ -130,7 +143,8 @@ test("two real clients: all questions, scores, host transfer and question timeou
 
     const [hostEnd, guestEnd] = await finish;
     assert.deepEqual(hostEnd, guestEnd);
-    assert.deepEqual(hostEnd.ranking.map(player => player.score), [15, 2]);
+    assert.equal(hostEnd.ranking.reduce((sum, player) => sum + player.score, 0), 15);
+    hostEnd.ranking.forEach(player => assert.equal(player.score, scoresExpected.get(player.id)));
     const promoted = nextEvent(guest, "lobbyUpdate", data => data.hostId === guest.id);
     host.disconnect();
     assert.equal((await promoted).players.length, 1);

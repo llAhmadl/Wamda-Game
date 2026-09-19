@@ -11,7 +11,7 @@ const PORT = Number(process.env.PORT ?? 3000);
 
 app.get("/api/version", (req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json({ version: "wamda-rounds-v1", rounds: TOTAL_ROUNDS, questionsPerRound: QUESTIONS_PER_ROUND, duration: DURATION });
+    res.json({ version: "wamda-first-correct-v2", rounds: TOTAL_ROUNDS, questionsPerRound: QUESTIONS_PER_ROUND, duration: DURATION });
 });
 app.use(express.static(path.join(__dirname, "public"), {
     setHeaders(res) { res.set("Cache-Control", "no-store"); }
@@ -24,308 +24,10 @@ app.use(express.static(path.join(__dirname, "public"), {
 const QUESTIONS_PER_ROUND = 5;
 const TOTAL_ROUNDS = 3;
 const DURATION = 20;
-const questions = [
-    {
-        "question": "ما المقصود بوحدة المعالجة المركزية؟",
-        "choices": [
-            "وحدة تخزين الملفات",
-            "وحدة تنفيذ التعليمات ومعالجة البيانات",
-            "شاشة الحاسوب",
-            "لوحة المفاتيح"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "أي لغة تُستخدم لإضافة التفاعل إلى صفحات الويب؟",
-        "choices": [
-            "بايثون",
-            "سي بلس بلس",
-            "جافاسكربت",
-            "جافا"
-        ],
-        "correct": 2
-    },
-    {
-        "question": "ما وظيفة لغة HTML؟",
-        "choices": [
-            "بناء هيكل صفحة الويب",
-            "حماية الشبكة",
-            "ضغط الصور",
-            "إدارة الطاقة"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "أي أمر يعرض الملفات في لينكس؟",
-        "choices": [
-            "cd",
-            "ls",
-            "pwd",
-            "mkdir"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "أي أداة تُستخدم لإدارة إصدارات الشيفرة؟",
-        "choices": [
-            "جِت",
-            "لينكس",
-            "إتش تي إم إل",
-            "سي إس إس"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "كم بتًّا في البايت الواحد؟",
-        "choices": [
-            "أربعة",
-            "ثمانية",
-            "ستة عشر",
-            "اثنان"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "أي جزء يخزن البيانات مؤقتًا أثناء تشغيل البرامج؟",
-        "choices": [
-            "القرص الصلب",
-            "الشاشة",
-            "ذاكرة الوصول العشوائي",
-            "الفأرة"
-        ],
-        "correct": 2
-    },
-    {
-        "question": "ما وظيفة نظام التشغيل؟",
-        "choices": [
-            "إدارة موارد الجهاز وتشغيل البرامج",
-            "طباعة الصور فقط",
-            "زيادة سرعة الإنترنت دائمًا",
-            "تصميم المواقع فقط"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "أي جهاز يُستخدم لإدخال النصوص؟",
-        "choices": [
-            "الشاشة",
-            "السماعة",
-            "الطابعة",
-            "لوحة المفاتيح"
-        ],
-        "correct": 3
-    },
-    {
-        "question": "ما وظيفة المتصفح؟",
-        "choices": [
-            "شحن البطارية",
-            "عرض صفحات الويب",
-            "تبريد المعالج",
-            "تخزين الكهرباء"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "ما عاصمة المملكة العربية السعودية؟",
-        "choices": [
-            "جدة",
-            "الدمام",
-            "الرياض",
-            "أبها"
-        ],
-        "correct": 2
-    },
-    {
-        "question": "ما أكبر كوكب في المجموعة الشمسية؟",
-        "choices": [
-            "المشتري",
-            "الأرض",
-            "المريخ",
-            "عطارد"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "كم ضلعًا للمثلث؟",
-        "choices": [
-            "أربعة",
-            "خمسة",
-            "ستة",
-            "ثلاثة"
-        ],
-        "correct": 3
-    },
-    {
-        "question": "ما الكوكب المعروف بالكوكب الأحمر؟",
-        "choices": [
-            "زحل",
-            "المريخ",
-            "الزهرة",
-            "نبتون"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "ما أكبر محيط على الأرض؟",
-        "choices": [
-            "الأطلسي",
-            "الهندي",
-            "الهادئ",
-            "المتجمد الشمالي"
-        ],
-        "correct": 2
-    },
-    {
-        "question": "أي عضو يضخ الدم في جسم الإنسان؟",
-        "choices": [
-            "القلب",
-            "الرئة",
-            "المعدة",
-            "الكبد"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "ما ناتج ضرب سبعة في ثمانية؟",
-        "choices": [
-            "ثمانية وأربعون",
-            "أربعة وخمسون",
-            "أربعة وستون",
-            "ستة وخمسون"
-        ],
-        "correct": 3
-    },
-    {
-        "question": "كم دقيقة في الساعة؟",
-        "choices": [
-            "ثلاثون",
-            "ستون",
-            "تسعون",
-            "مئة"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "أي حيوان يُعرف بسفينة الصحراء؟",
-        "choices": [
-            "الحصان",
-            "الفيل",
-            "الجمل",
-            "الغزال"
-        ],
-        "correct": 2
-    },
-    {
-        "question": "ما الغاز الذي تمتصه النباتات في عملية البناء الضوئي؟",
-        "choices": [
-            "ثاني أكسيد الكربون",
-            "الأكسجين",
-            "الهيليوم",
-            "الهيدروجين"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "ما عاصمة مصر؟",
-        "choices": [
-            "الإسكندرية",
-            "القاهرة",
-            "الأقصر",
-            "أسوان"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "كم ضلعًا للمربع؟",
-        "choices": [
-            "ثلاثة",
-            "خمسة",
-            "أربعة",
-            "ستة"
-        ],
-        "correct": 2
-    },
-    {
-        "question": "أي كوكب هو الأقرب إلى الشمس؟",
-        "choices": [
-            "عطارد",
-            "الأرض",
-            "زحل",
-            "المريخ"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "ما ناتج جمع خمسة عشر وسبعة؟",
-        "choices": [
-            "عشرون",
-            "واحد وعشرون",
-            "ثلاثة وعشرون",
-            "اثنان وعشرون"
-        ],
-        "correct": 3
-    },
-    {
-        "question": "بأي عضو يسمع الإنسان؟",
-        "choices": [
-            "العين",
-            "الأذن",
-            "الأنف",
-            "اللسان"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "ما الحالة التي يتحول إليها الماء عند التجمد؟",
-        "choices": [
-            "غازية",
-            "بلازمية",
-            "صلبة",
-            "سائلة"
-        ],
-        "correct": 2
-    },
-    {
-        "question": "ما القارة التي تقع فيها المملكة العربية السعودية؟",
-        "choices": [
-            "آسيا",
-            "أفريقيا",
-            "أوروبا",
-            "أستراليا"
-        ],
-        "correct": 0
-    },
-    {
-        "question": "كم شهرًا في السنة الميلادية؟",
-        "choices": [
-            "عشرة",
-            "أحد عشر",
-            "ثلاثة عشر",
-            "اثنا عشر"
-        ],
-        "correct": 3
-    },
-    {
-        "question": "أي أداة تُستخدم لقياس درجة الحرارة؟",
-        "choices": [
-            "المسطرة",
-            "مقياس الحرارة",
-            "الميزان",
-            "البوصلة"
-        ],
-        "correct": 1
-    },
-    {
-        "question": "ما ناتج قسمة مئة على عشرة؟",
-        "choices": [
-            "خمسة",
-            "عشرون",
-            "عشرة",
-            "خمسون"
-        ],
-        "correct": 2
-    }
-];
+const { createQuestionStore } = require("./lib/question-store");
+const { installAdmin } = require("./lib/admin");
+const questionStore = createQuestionStore({ required: QUESTIONS_PER_ROUND * TOTAL_ROUNDS });
+
 
 // -------------------------
 // Rooms
@@ -436,8 +138,9 @@ function removePlayer(socket) {
 
 function sendQuestion(roomCode) {
     const room = rooms.get(roomCode);
-    const question = questions[room.questionIndex];
+    const question = room.questions[room.questionIndex];
     room.phase = "question";
+    room.winner = null;
     room.deadline = Date.now() + DURATION * 1000;
     for (const player of room.players.values()) player.answered = false;
     io.to(roomCode).emit("question", {
@@ -459,8 +162,10 @@ function closeQuestion(roomCode) {
     room.timer = null;
     room.phase = "review";
     io.to(roomCode).emit("questionClosed", {
-        correctIndex: questions[room.questionIndex].correct,
-        lastInRound: (room.questionIndex + 1) % QUESTIONS_PER_ROUND === 0
+        correctIndex: room.questions[room.questionIndex].correct,
+        lastInRound: (room.questionIndex + 1) % QUESTIONS_PER_ROUND === 0,
+        winner: room.winner,
+        reason: room.winner ? "winner" : Date.now() >= room.deadline ? "timeout" : "answered"
     });
 }
 
@@ -489,6 +194,19 @@ function nextQuestion(roomCode) {
 io.on("connection", (socket) => {
 
     console.log("Player connected:", socket.id);
+
+    socket.on("changeName", (payload, reply) => {
+        if (typeof reply !== "function") return;
+        const name = cleanName(payload?.name);
+        if (!name) return reply({ ok: false, message: "أدخل اسمًا من حرف إلى 20 حرفًا." });
+        socket.data.name = name;
+        const room = rooms.get(socket.data.roomCode);
+        if (room?.players.has(socket.id)) {
+            room.players.get(socket.id).name = name;
+            sendLobby(socket.data.roomCode);
+        }
+        reply({ ok: true, name });
+    });
 
     // CREATE ROOM
     socket.on("createRoom", ({ name }, callback) => {
@@ -534,6 +252,7 @@ io.on("connection", (socket) => {
         socket.join(roomCode);
 
         socket.data.roomCode = roomCode;
+        socket.data.name = playerName;
 
         callback({
             ok: true,
@@ -602,6 +321,7 @@ io.on("connection", (socket) => {
 
             socket.data.roomCode =
                 roomCode;
+            socket.data.name = playerName;
 
             callback({
                 ok: true,
@@ -627,6 +347,7 @@ io.on("connection", (socket) => {
             return;
         }
 
+        room.questions = questionStore.gameQuestions();
         room.started = true;
 
         room.questionIndex = 0;
@@ -664,7 +385,7 @@ io.on("connection", (socket) => {
             }
 
             const question =
-                questions[room.questionIndex];
+                room.questions[room.questionIndex];
 
             player.answered = true;
 
@@ -673,6 +394,7 @@ io.on("connection", (socket) => {
 
             if (correct) {
                 player.score++;
+                room.winner = { id: socket.id, name: player.name };
             }
 
             socket.emit("answerResult", {
@@ -688,7 +410,7 @@ io.on("connection", (socket) => {
                     player => player.answered
                 );
 
-            if (everyoneAnswered) closeQuestion(code);
+            if (correct || everyoneAnswered) closeQuestion(code);
         }
     );
 
@@ -724,11 +446,13 @@ io.on("connection", (socket) => {
     });
 });
 
+installAdmin(io, rooms, questionStore);
+
 // Start server
 
-server.listen(PORT, () => {
-
-    console.log(
-        `وَمْضة running at http://localhost:${server.address().port}`
-    );
+questionStore.init().then(() => {
+    server.listen(PORT, () => console.log(`وَمْضة running at http://localhost:${server.address().port}`));
+}).catch(error => {
+    console.error("تعذر تحميل بنك الأسئلة:", error.code || "storage error");
+    process.exitCode = 1;
 });

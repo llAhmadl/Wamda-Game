@@ -53,7 +53,7 @@ test('an empty PostgreSQL database needs no tables for gameplay and is never see
     assert.equal(store.gameQuestions().length, 15);
     assert.equal(store.snapshot().writable, false);
     await assert.rejects(store.mutate({ action: 'createBank', name: 'بنك', revision: 0 }));
-    assert.deepEqual(queries, ['SELECT data FROM wamda_banks WHERE id = 1']);
+    assert.deepEqual(queries, ['SELECT data FROM public.wamda_banks WHERE id = 1']);
     await store.close();
 });
 
@@ -70,7 +70,7 @@ test('existing PostgreSQL question data stays available without schema changes',
     await store.init();
     assert.equal(store.gameQuestions()[0].question, 'سؤال محفوظ سابقًا');
     assert.equal(store.snapshot().writable, true);
-    assert.deepEqual(queries, ['SELECT data FROM wamda_banks WHERE id = 1']);
+    assert.deepEqual(queries, ['SELECT data FROM public.wamda_banks WHERE id = 1']);
     await store.close();
 });
 

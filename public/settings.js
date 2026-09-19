@@ -76,6 +76,8 @@
         const active = bank.id === model.activeBankId;
         el('bank-status').textContent = `${bank.questions.length} سؤالًا${active ? ' · مستخدم للعب' : ''} · يلزم ${model.required} سؤالًا لتفعيل البنك. تُستخدم أول ${model.required} أسئلة، وتضاف الأسئلة الجديدة في البداية.`;
         el('activate-bank').disabled = !model.writable || active || bank.questions.length < model.required;
+        el('rename-bank-name').value = bank.name;
+        el('delete-bank').disabled = !model.writable || active;
         el('bank-questions').textContent = '';
         bank.questions.forEach(question => {
             const row = document.createElement('article'); row.className = 'admin-question';
@@ -107,7 +109,7 @@
         });
         el('bank-select').value = data.banks.some(bank => bank.id === previous) ? previous : data.activeBankId;
         el('storage-status').textContent = `الحفظ: ${data.storage}`;
-        ['bank-form', 'question-form'].forEach(id => el(id).querySelectorAll('input, button, textarea, select').forEach(input => { input.disabled = !data.writable; }));
+        ['bank-form', 'rename-bank-form', 'question-form'].forEach(id => el(id).querySelectorAll('input, button, textarea, select').forEach(input => { input.disabled = !data.writable; }));
         el('import-bank').disabled = !data.writable;
         renderBank();
         if (data.stats) renderStats(data.stats);
@@ -145,12 +147,13 @@
     async function mutate(payload) {
         if (busy || !model) return;
         busy = true; message('جارٍ الحفظ...');
+        el('developer-content').inert = true;
         try {
             const data = await request('adminMutate', { ...payload, revision: model.revision });
             const preferred = payload.action === 'createBank' ? data.banks.at(-1).id : null;
             render(data, preferred); resetEditor(); message('تم الحفظ. التغييرات تطبّق على المباريات الجديدة.');
         } catch (error) { message(error.message); }
-        finally { busy = false; }
+        finally { busy = false; el('developer-content').inert = false; }
     }
     el('admin-refresh').addEventListener('click', refresh);
     el('admin-logout').addEventListener('click', async () => {
@@ -160,6 +163,14 @@
     socket.on('disconnect', () => { resetSession(); message('انقطع الاتصال. سجّل الدخول مجددًا.'); });
     el('bank-select').addEventListener('change', () => { resetEditor(); renderBank(); });
     el('cancel-edit').addEventListener('click', resetEditor);
+    el('rename-bank-form').addEventListener('submit', event => {
+        event.preventDefault();
+        mutate({ action: 'renameBank', bankId: el('bank-select').value, name: el('rename-bank-name').value });
+    });
+    el('delete-bank').addEventListener('click', () => {
+        const bank = selectedBank();
+        if (bank && window.confirm(`حذف بنك «${bank.name}» وجميع أسئلته؟`)) mutate({ action: 'deleteBank', bankId: bank.id });
+    });
     el('bank-form').addEventListener('submit', async event => {
         event.preventDefault(); await mutate({ action: 'createBank', name: el('bank-name').value });
     });

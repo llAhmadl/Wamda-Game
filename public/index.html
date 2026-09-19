@@ -155,6 +155,12 @@
                 <label for="bank-select">البنك</label><select id="bank-select"></select>
                 <p id="bank-status" class="helper-message"></p>
                 <button id="activate-bank" class="secondary full-width field-action" type="button">استخدام هذا البنك للمباريات الجديدة</button>
+                <form id="rename-bank-form" class="admin-inline">
+                    <label for="rename-bank-name">تغيير اسم البنك المحدد</label>
+                    <input id="rename-bank-name" required maxlength="60">
+                    <button class="secondary full-width field-action" type="submit">حفظ اسم البنك</button>
+                    <button id="delete-bank" class="text-button full-width" type="button">حذف البنك المحدد</button>
+                </form>
                 <form id="bank-form" class="admin-inline">
                     <label for="bank-name">إنشاء بنك جديد</label>
                     <input id="bank-name" required maxlength="60" placeholder="مثال: معلومات عامة">

@@ -8,6 +8,7 @@ const publicDir = path.join(__dirname, "../public");
 const html = fs.readFileSync(path.join(publicDir, "index.html"), "utf8");
 const appCode = fs.readFileSync(path.join(publicDir, "app.js"), "utf8");
 const themeCode = fs.readFileSync(path.join(publicDir, "theme.js"), "utf8");
+const nameCode = fs.readFileSync(path.join(publicDir, "name-validation.js"), "utf8");
 
 // A deliberately small DOM double: these are logic checks, NOT browser/layout tests.
 class Element {
@@ -49,6 +50,8 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     for (const match of html.matchAll(/<([\w-]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
         const element = new Element(match[1]);
         element.className = /class="([^"]+)"/.exec(match[2])?.[1] || "";
+        for (const attribute of match[2].matchAll(/([\w-]+)="([^"]*)"/g)) element.setAttribute(attribute[1], attribute[2]);
+        if (match[1] === "label") element.textContent = html.slice(match.index + match[0].length).split("<")[0];
         assert.ok(!elements.has(match[3]), "IDs must be unique");
         elements.set(match[3], element);
     }
@@ -91,6 +94,7 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
         clearInterval: id => intervals.delete(id)
     });
     vm.runInContext(themeCode, context);
+    vm.runInContext(nameCode, context);
     vm.runInContext(appCode, context);
     return { el, document, window, system, store, socket, context, intervals, meta, get copied() { return copied; } };
 }
@@ -103,7 +107,7 @@ test("light/dark toggle persists, updates its label and restores before DOM read
     assert.equal(ui.document.documentElement.dataset.theme, "dark");
     assert.equal(ui.store.get("firsthit-theme"), "dark");
     assert.equal(ui.el("theme-label").textContent, "الوضع الفاتح");
-    assert.equal(ui.meta.content, "#111316");
+    assert.equal(ui.meta.content, "#1b1c1e");
     const reloaded = setup({ saved: "dark" });
     assert.equal(reloaded.document.documentElement.dataset.theme, "dark");
     await ui.el("theme-toggle").click();
@@ -150,6 +154,33 @@ test("copy failure gives useful feedback and guests cannot see Start", async () 
     await ui.el("copy-code").click();
     assert.match(ui.el("copy-message").textContent, /حدّد الرمز/);
     assert.equal(ui.el("start-button").classList.contains("hidden"), true);
+});
+
+test("name registration rejects numeric-only names in different scripts and recovers on input", async () => {
+    const ui = setup();
+    for (const name of ["", "   ", "12345", "١٢٣٤٥", "۱۲۳۴۵", "１２３", "1 ٢ ۳"]) {
+        ui.el("name-input").value = name;
+        await ui.el("play-button").click();
+        assert.equal(ui.el("name-input").getAttribute("aria-invalid"), "true");
+        assert.equal(ui.el("name-input").value, "", "Discard the invalid value");
+        assert.equal(ui.el("name-input").getAttribute("placeholder"), "ادخل اسمك، مثال: مشعل");
+        assert.equal(ui.el("name-label").textContent, "ادخل اسمك");
+        assert.ok(ui.el("name-label").classList.contains("input-error-label"));
+        assert.equal(ui.el("name-error").textContent, "ادخل اسمك، مثال: مشعل");
+        assert.ok(ui.el("name-error").classList.contains("sr-only"), "Announce the error without duplicating it below the field");
+        assert.equal(ui.el("name-screen").classList.contains("hidden"), false);
+    }
+    assert.equal(ui.socket.sent.length, 0, "Invalid names never reach the socket");
+    ui.el("name-input").value = "  مشعل ٢  ";
+    await ui.el("name-input").fire("input");
+    assert.equal(ui.el("name-input").getAttribute("aria-invalid"), null);
+    assert.equal(ui.el("name-input").getAttribute("placeholder"), "الاسم");
+    assert.equal(ui.el("name-label").textContent, "سجل اسمك");
+    assert.equal(ui.el("name-label").classList.contains("input-error-label"), false);
+    assert.equal(ui.el("name-error").textContent, "");
+    await ui.el("name-input").fire("keydown", { key: "Enter" });
+    assert.equal(ui.el("player-name").textContent, "مشعل ٢");
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
 });
 
 test("answers submit once, selected wrong answers are not marked correct", async () => {

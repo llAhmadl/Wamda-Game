@@ -34,6 +34,14 @@ test('admin authentication, logout, connection stats, rename, validation and rat
     assert.equal((await request(player, 'changeName', { name: 'أحمد' })).ok, true);
     const room = await request(player, 'createRoom', { name: 'أحمد' });
     assert.equal((await request(player, 'changeName', { name: 'علي' })).name, 'علي');
+    // A client cannot bypass registration validation or change an existing room by sending numbers.
+    for (const name of ['', '1234', '١٢٣٤', '۱۲۳۴', '1 ٢ ۳']) {
+        for (const event of ['changeName', 'createRoom', 'joinRoom']) {
+            const invalidName = await request(player, event, { name, code: room.code });
+            assert.equal(invalidName.ok, false);
+            assert.equal(invalidName.message, 'ادخل اسمك، مثال: مشعل');
+        }
+    }
     const stats = (await request(admin, 'adminStats')).stats;
     assert.equal(stats.connections, 2); assert.equal(stats.rooms, 1);
     assert.deepEqual(stats.players, [{ name: 'علي', room: room.code, host: true }]);

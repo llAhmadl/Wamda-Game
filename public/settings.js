@@ -1,7 +1,10 @@
 (() => {
     const el = id => document.getElementById(id);
     const menu = el('site-menu');
+    const menuToggle = el('menu-toggle');
     const developer = el('developer-dialog');
+    const renameField = createNameField(el('rename-input'), el('rename-label'), el('rename-error'));
+    let closingMenu = null;
     let session = false;
     let model = null;
     let editing = null;
@@ -21,25 +24,57 @@
             });
         });
     }
-    function open(dialog) { menu.open = false; if (!dialog.open) dialog.showModal(); }
+    // Keep the native dialog's focus trap and Escape handling during the slide.
+    function closeMenu() {
+        if (closingMenu) return closingMenu;
+        if (!menu.open) return Promise.resolve();
+        menu.classList.add('is-closing');
+        closingMenu = Promise.all(menu.getAnimations().map(animation => animation.finished.catch(() => {}))).then(() => {
+            menu.close();
+            menu.classList.remove('is-closing');
+            menuToggle.setAttribute('aria-expanded', 'false');
+            closingMenu = null;
+        });
+        return closingMenu;
+    }
+    menuToggle.addEventListener('click', () => {
+        if (menu.open || closingMenu) return;
+        menu.showModal();
+        menuToggle.setAttribute('aria-expanded', 'true');
+    });
+    el('menu-close').addEventListener('click', closeMenu);
+    menu.addEventListener('cancel', event => { event.preventDefault(); closeMenu(); });
+    menu.addEventListener('click', event => {
+        const bounds = menu.getBoundingClientRect();
+        if (event.target === menu && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) closeMenu();
+    });
+    async function open(dialog) {
+        await closeMenu();
+        if (!dialog.open) dialog.showModal();
+    }
     document.addEventListener('click', event => {
-        if (!menu.contains(event.target)) menu.open = false;
         const close = event.target.closest('[data-close]');
         if (close) el(close.dataset.close).close();
     });
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') menu.open = false; });
-    el('rename-button').addEventListener('click', () => {
+    el('rules-button').addEventListener('click', () => open(el('rules-dialog')));
+    el('rename-button').addEventListener('click', async () => {
         el('rename-input').value = playerName;
-        el('rename-error').textContent = '';
-        open(el('rename-dialog'));
+        renameField.clear();
+        await open(el('rename-dialog'));
         el('rename-input').focus();
     });
     el('rename-form').addEventListener('submit', async event => {
         event.preventDefault();
+        const name = cleanPlayerName(el('rename-input').value);
+        if (!name) {
+            renameField.reject();
+            return;
+        }
         try {
-            const result = await request('changeName', { name: el('rename-input').value });
+            const result = await request('changeName', { name });
             playerName = result.name;
             nameInput.value = result.name;
+            nameField.clear();
             playerNameText.textContent = result.name;
             el('rename-dialog').close();
             if (!screens.name.classList.contains('hidden')) showScreen('home');
@@ -126,8 +161,8 @@
             catch (error) { message(error.message); }
         }, 5000);
     }
-    el('developer-button').addEventListener('click', () => {
-        open(developer);
+    el('developer-button').addEventListener('click', async () => {
+        await open(developer);
         if (session) { refresh(); startPolling(); } else el('developer-code').focus();
     });
     developer.addEventListener('close', () => { clearInterval(polling); });
@@ -197,4 +232,12 @@
         const link = document.createElement('a'); link.href = url; link.download = 'wamda-questions.json'; link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
+
+    // The release number has one source: package.json on the server.
+    fetch('/api/site').then(response => {
+        if (!response.ok) throw Error('Site metadata unavailable');
+        return response.json();
+    }).then(data => {
+        if (typeof data.version === 'string') el('site-version').textContent = ` · v${data.version}`;
+    }).catch(() => { /* Keep the footer usable if metadata is temporarily unavailable. */ });
 })();

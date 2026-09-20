@@ -2,12 +2,19 @@ const express = require("express");
 const http = require("http");
 const path = require("path");
 const { Server } = require("socket.io");
+const { cleanPlayerName: cleanName } = require("./public/name-validation");
+const { version: siteVersion } = require("./package.json");
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = Number(process.env.PORT ?? 3000);
+
+app.get("/api/site", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json({ version: siteVersion });
+});
 
 app.get("/api/version", (req, res) => {
     res.set("Cache-Control", "no-store");
@@ -56,15 +63,6 @@ function generateRoomCode() {
     } while (rooms.has(code));
 
     return code;
-}
-
-function cleanName(name) {
-
-    if (typeof name !== "string") {
-        return "";
-    }
-
-    return name.trim().slice(0, 20);
 }
 
 function getPlayers(room) {
@@ -198,7 +196,7 @@ io.on("connection", (socket) => {
     socket.on("changeName", (payload, reply) => {
         if (typeof reply !== "function") return;
         const name = cleanName(payload?.name);
-        if (!name) return reply({ ok: false, message: "أدخل اسمًا من حرف إلى 20 حرفًا." });
+        if (!name) return reply({ ok: false, message: "ادخل اسمك، مثال: مشعل" });
         socket.data.name = name;
         const room = rooms.get(socket.data.roomCode);
         if (room?.players.has(socket.id)) {
@@ -217,7 +215,7 @@ io.on("connection", (socket) => {
 
             callback({
                 ok: false,
-                message: "أدخل اسمك."
+                message: "ادخل اسمك، مثال: مشعل"
             });
 
             return;
@@ -280,7 +278,7 @@ io.on("connection", (socket) => {
 
                 callback({
                     ok: false,
-                    message: "أدخل اسمك."
+                    message: "ادخل اسمك، مثال: مشعل"
                 });
 
                 return;

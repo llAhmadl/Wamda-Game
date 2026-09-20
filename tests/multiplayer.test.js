@@ -47,7 +47,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
         });
     });
 
-    for (const file of ["/", "/style.css", "/theme.js", "/app.js", "/socket.io/socket.io.js"]) {
+    for (const file of ["/", "/style.css", "/theme.js", "/name-validation.js", "/app.js", "/settings.js", "/socket.io/socket.io.js"]) {
         const response = await fetch(baseUrl + file);
         assert.equal(response.status, 200, file);
     }
@@ -55,6 +55,9 @@ test("two real clients: all questions, scores, host transfer and question timeou
     const versionResponse = await fetch(baseUrl + "/api/version");
     assert.equal(versionResponse.headers.get("cache-control"), "no-store");
     assert.deepEqual(await versionResponse.json(), { version: "wamda-first-correct-v2", rounds: 3, questionsPerRound: 5, duration: 20 });
+    const siteResponse = await fetch(baseUrl + "/api/site");
+    assert.equal(siteResponse.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await siteResponse.json(), { version: require("../package.json").version });
 
     async function connect() {
         const socket = io(baseUrl, { transports: ["websocket"], autoConnect: false, reconnection: false });

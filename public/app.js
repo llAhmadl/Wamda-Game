@@ -122,6 +122,7 @@ const homeButton =
     document.getElementById("home-button");
 
 const nameError = document.getElementById("name-error");
+const nameField = createNameField(nameInput, document.getElementById("name-label"), nameError);
 const playerCount = document.getElementById("player-count");
 const copyCodeButton = document.getElementById("copy-code");
 const copyMessage = document.getElementById("copy-message");
@@ -160,16 +161,43 @@ function isConnected() {
 // Name
 // -------------------------
 
+// The same error presentation is used for registration and renaming.
+function createNameField(input, label, error) {
+    const placeholder = input.getAttribute("placeholder") || "";
+    const originalLabel = label.textContent;
+    function clear() {
+        input.removeAttribute("aria-invalid");
+        input.setAttribute("placeholder", placeholder);
+        label.textContent = originalLabel;
+        label.classList.remove("input-error-label");
+        error.textContent = "";
+        error.classList.remove("sr-only");
+    }
+    input.addEventListener("input", clear);
+    return {
+        clear,
+        reject() {
+            const message = "ادخل اسمك، مثال: مشعل";
+            input.value = "";
+            input.setAttribute("aria-invalid", "true");
+            input.setAttribute("placeholder", message);
+            label.textContent = "ادخل اسمك";
+            label.classList.add("input-error-label");
+            // Keep the inline placeholder error announced by assistive technology.
+            error.classList.add("sr-only");
+            error.textContent = message;
+            input.focus();
+        }
+    };
+}
+
 function enterHome() {
 
-    const name =
-        nameInput.value.trim();
+    const name = cleanPlayerName(nameInput.value);
 
     if (!name) {
 
-        nameError.textContent = "أدخل اسمك للمتابعة.";
-        nameInput.setAttribute("aria-invalid", "true");
-        nameInput.focus();
+        nameField.reject();
 
         return;
     }
@@ -177,8 +205,7 @@ function enterHome() {
     playerName = name;
     if (socket.connected) socket.emit("changeName", { name }, () => {});
 
-    nameError.textContent = "";
-    nameInput.removeAttribute("aria-invalid");
+    nameField.clear();
 
     playerNameText.textContent =
         playerName;
@@ -190,11 +217,6 @@ playButton.addEventListener(
     "click",
     enterHome
 );
-
-nameInput.addEventListener("input", () => {
-    nameError.textContent = "";
-    nameInput.removeAttribute("aria-invalid");
-});
 
 nameInput.addEventListener(
     "keydown",
@@ -216,7 +238,7 @@ createButton.addEventListener(
 
         if (!isConnected()) return;
 
-        homeError.textContent = "";
+        clearRoomCodeError();
 
         socket.emit(
             "createRoom",
@@ -264,11 +286,28 @@ roomCodeInput.addEventListener(
     }
 );
 
+const roomCodePlaceholder = roomCodeInput.getAttribute("placeholder");
+function clearRoomCodeError() {
+    roomCodeInput.removeAttribute("aria-invalid");
+    roomCodeInput.setAttribute("placeholder", roomCodePlaceholder);
+    homeError.classList.remove("sr-only");
+    homeError.textContent = "";
+}
+function showRoomCodeError(message) {
+    roomCodeInput.value = "";
+    roomCodeInput.setAttribute("aria-invalid", "true");
+    roomCodeInput.setAttribute("placeholder", message);
+    homeError.classList.add("sr-only");
+    homeError.textContent = message;
+    roomCodeInput.focus();
+}
+roomCodeInput.addEventListener("input", clearRoomCodeError);
+
 function joinRoom() {
 
     if (!isConnected()) return;
 
-    homeError.textContent = "";
+    clearRoomCodeError();
 
     const code =
         roomCodeInput
@@ -278,8 +317,7 @@ function joinRoom() {
 
     if (!code) {
 
-        homeError.textContent =
-            "أدخل رمز الغرفة.";
+        showRoomCodeError(roomCodePlaceholder);
 
         return;
     }
@@ -294,8 +332,7 @@ function joinRoom() {
 
             if (!response.ok) {
 
-                homeError.textContent =
-                    response.message;
+                showRoomCodeError("رمز الغرفة غير صحيح");
 
                 return;
             }

@@ -6,8 +6,11 @@
     <meta name="theme-color" content="#ffffff">
     <meta name="color-scheme" content="light dark">
     <title>وَمْضة</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
     <script src="theme.js"></script>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="categories.css">
+    <link rel="stylesheet" href="categories-admin.css">
 </head>
 <body>
     <div class="ambient-background" aria-hidden="true">
@@ -21,7 +24,7 @@
             <button id="menu-toggle" class="menu-toggle" type="button" aria-label="فتح القائمة" aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
-            <span class="brand">وَمْضة</span>
+            <button id="home-logo" class="brand" type="button" aria-label="وَمْضة — الرئيسية">وَمْضة</button>
         </div>
     </header>
 
@@ -79,8 +82,24 @@
                     <h2>اللاعبون</h2><span id="player-count" class="count-badge">0</span>
                 </div>
                 <div id="players-list" class="players"></div>
+            </div>
+            <section class="lobby-categories" aria-labelledby="categories-heading">
+                <div class="section-heading"><h2 id="categories-heading">اختر أقسام التحدي</h2><span class="small-label">جولتان · 20 سؤالًا</span></div>
+                <p id="category-hint" class="hint">يمكن اختيار أكثر من قسم.</p>
+                <div id="category-cards" class="category-grid" role="group" aria-label="أقسام الأسئلة"></div>
+                <p id="category-count" class="helper-message" role="status"></p>
+            </section>
+            <div class="panel lobby-settings">
+                <label for="scoring-mode">النقاط للإجابات الصحيحة الأسرع</label>
+                <select id="scoring-mode" aria-describedby="scoring-description">
+                    <option value="1">أول لاعب</option>
+                    <option value="3">أول 3 لاعبين</option>
+                    <option value="4">أول 4 لاعبين</option>
+                </select>
+                <p id="scoring-description" class="helper-message"></p>
                 <div class="lobby-actions">
                     <p id="host-message" class="hint">بانتظار المضيف...</p>
+                    <p id="lobby-error" class="error" role="alert"></p>
                     <button id="start-button" class="primary full-width hidden" type="button">بدء اللعبة</button>
                     <button id="leave-button" class="text-button full-width" type="button">مغادرة الغرفة</button>
                 </div>
@@ -162,8 +181,9 @@
 
     <dialog id="developer-dialog" class="settings-dialog developer-dialog" aria-labelledby="developer-title">
         <div class="dialog-heading"><h2 id="developer-title">وضع المطور</h2><button class="dialog-close" type="button" data-close="developer-dialog" aria-label="إغلاق">×</button></div>
+        <button id="developer-home" class="text-button" type="button">العودة للرئيسية</button>
         <form id="developer-login">
-            <p class="hint">أدخل كود المطور لإدارة الأسئلة ومتابعة اللاعبين.</p>
+            <p class="hint">أدخل كود المطور لإدارة التصنيفات والأسئلة ومتابعة اللاعبين.</p>
             <label for="developer-code">كود المطور</label>
             <input id="developer-code" type="password" maxlength="256" required autocomplete="current-password">
             <button class="primary full-width field-action" type="submit">دخول</button>
@@ -175,6 +195,23 @@
                 <h3 id="online-title">المتصلون الآن</h3>
                 <p id="online-count" class="helper-message"></p>
                 <div id="online-players" class="admin-list"></div>
+            </section>
+            <section class="admin-section" aria-labelledby="categories-title">
+                <h3 id="categories-title">التصنيفات</h3>
+                <p class="helper-message">تظهر التصنيفات المحفوظة مباشرة في الغرف وقائمة تصنيف السؤال. الأسئلة القديمة محفوظة ضمن «أسئلة عامة».</p>
+                <p id="category-image-storage" class="helper-message"></p>
+                <form id="category-form">
+                    <h4 id="category-editor-title">إضافة تصنيف</h4>
+                    <label for="category-name">اسم التصنيف</label>
+                    <input id="category-name" required maxlength="60" placeholder="مثال: رياضة">
+                    <label for="category-image">صورة التصنيف</label>
+                    <input id="category-image" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="category-image-help">
+                    <p id="category-image-help" class="helper-message">JPG أو PNG أو WebP، حتى 2 ميجابايت و4 ملايين بكسل. تُحفظ الصورة بحجم مناسب للعرض.</p>
+                    <img id="category-preview" class="admin-category-preview hidden" alt="معاينة صورة التصنيف" width="240" height="180">
+                    <button id="category-save" class="primary full-width field-action" type="submit">حفظ التصنيف</button>
+                    <button id="cancel-category-edit" class="text-button full-width hidden" type="button">إلغاء التعديل</button>
+                </form>
+                <div id="category-list" class="admin-list"></div>
             </section>
             <section class="admin-section" aria-labelledby="banks-title">
                 <h3 id="banks-title">بنوك الأسئلة</h3>
@@ -194,8 +231,10 @@
                     <button class="secondary full-width field-action" type="submit">إنشاء البنك</button>
                 </form>
                 <details class="admin-import"><summary>استيراد وتصدير الأسئلة</summary>
-                    <p class="helper-message">يمكنك تصدير بنك، تعديل ملفه، ثم استيراده. يُضاف محتوى الملف إلى البنك المحدد.</p>
+                    <p class="helper-message">يُضاف محتوى الملف إلى البنك المحدد. كل سؤال يحتاج categoryId لتصنيف موجود، أو اختر تصنيفًا للأسئلة التي لا تحدد تصنيفًا داخل الملف.</p>
                     <button id="export-bank" class="secondary full-width field-action" type="button">تنزيل نسخة JSON</button>
+                    <label for="import-category">تصنيف الأسئلة التي لا تحدد تصنيفًا</label>
+                    <select id="import-category"><option value="">استخدام تصنيف كل سؤال في الملف</option></select>
                     <label for="import-bank">إضافة أسئلة من ملف JSON</label>
                     <input id="import-bank" type="file" accept=".json,application/json">
                 </details>
@@ -203,6 +242,8 @@
             <section class="admin-section" aria-labelledby="question-editor-title">
                 <h3 id="question-editor-title">إضافة سؤال</h3>
                 <form id="question-form">
+                    <label for="edit-category">التصنيف</label>
+                    <select id="edit-category" required><option value="">اختر التصنيف</option></select>
                     <label for="edit-question">السؤال</label><textarea id="edit-question" required maxlength="300" rows="2"></textarea>
                     <div class="question-fields">
                         <label>A<input id="edit-choice-0" required maxlength="160"></label>

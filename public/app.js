@@ -14,6 +14,9 @@ let currentRound = 1;
 let lastInRound = false;
 let resultsAnimation = null;
 let resultMotions = [];
+let lobbySettings = { categories: [], selectedCategoryIds: [], scoringMode: 1 };
+let settingsPending = false;
+const categoryNodes = new Map();
 
 // -------------------------
 // Screens
@@ -104,6 +107,8 @@ const nextQuestionButton = document.getElementById("next-question-button");
 const nextRoundButton = document.getElementById("next-round-button");
 
 function updateControls() {
+    document.getElementById("home-logo").disabled = isActiveGame();
+    document.getElementById("developer-home").disabled = isActiveGame();
     nextQuestionButton.classList.add("hidden");
     nextRoundButton.classList.add("hidden");
     if (phase === "review" && amHost) nextQuestionButton.classList.remove("hidden");
@@ -135,6 +140,9 @@ socket.on("disconnect", () => {
     clearInterval(countdown);
     if (currentRoom) {
         currentRoom = "";
+        phase = "lobby";
+        settingsPending = false;
+        updateControls();
         showScreen("home");
         homeError.textContent = "أنشئ غرفة أو انضم مجددًا بعد عودة الاتصال.";
     }
@@ -352,6 +360,74 @@ function joinRoom() {
 // Lobby Updates
 // -------------------------
 
+function isActiveGame() {
+    return Boolean(currentRoom) && ["question", "review", "roundResults"].includes(phase);
+}
+
+function renderLobbySettings() {
+    const editable = amHost && !isActiveGame() && !settingsPending;
+    const grid = document.getElementById("category-cards");
+    const categories = lobbySettings.categories;
+    for (const [id, node] of categoryNodes) {
+        if (!categories.some(category => category.id === id)) {
+            node.button.remove();
+            categoryNodes.delete(id);
+        }
+    }
+    categories.forEach(category => {
+        let node = categoryNodes.get(category.id);
+        if (!node) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "category-card";
+            const image = document.createElement("img");
+            image.alt = ""; image.loading = "lazy"; image.decoding = "async";
+            image.width = 480; image.height = 360;
+            const check = document.createElement("span");
+            check.className = "category-check";
+            check.setAttribute("aria-hidden", "true");
+            const name = document.createElement("span");
+            name.className = "category-name";
+            button.appendChild(image); button.appendChild(check); button.appendChild(name);
+            button.addEventListener("click", () => {
+                const selected = lobbySettings.selectedCategoryIds;
+                changeRoomSettings(selected.includes(category.id) ? selected.filter(id => id !== category.id) : [...selected, category.id], lobbySettings.scoringMode);
+            });
+            node = { button, image, check, name };
+            categoryNodes.set(category.id, node);
+            grid.appendChild(button);
+        }
+        const selected = lobbySettings.selectedCategoryIds.includes(category.id);
+        node.image.src = category.image || "/images/categories/placeholder.svg";
+        node.name.textContent = category.name;
+        node.check.textContent = selected ? "✓" : "";
+        node.button.setAttribute("aria-pressed", String(selected));
+        node.button.setAttribute("aria-label", `${category.name} · ${category.count || 0} سؤالًا`);
+        node.button.disabled = !editable;
+    });
+    const count = lobbySettings.availableQuestionCount ?? categories.filter(c => lobbySettings.selectedCategoryIds.includes(c.id)).reduce((sum, c) => sum + (c.count || 0), 0);
+    document.getElementById("category-count").textContent = `${lobbySettings.selectedCategoryIds.length} أقسام محددة · ${count} سؤالًا متاحًا · تحتاج المباراة 20 سؤالًا`;
+    document.getElementById("category-hint").textContent = amHost ? "اختر قسمًا أو أكثر. أسئلة المباراة من البنك المفعّل." : "المضيف يختار الأقسام. تظهر اختياراته هنا مباشرة.";
+    const scoring = document.getElementById("scoring-mode");
+    scoring.value = String(lobbySettings.scoringMode);
+    scoring.disabled = !editable;
+    document.getElementById("scoring-description").textContent = lobbySettings.scoringMode === 1 ? "أول إجابة صحيحة تكسب نقطة واحدة." : `الأول الصحيح يكسب نقطتين، وكل لاعب بعده نقطة حتى يكتمل ${lobbySettings.scoringMode} لاعبين.`;
+    startButton.disabled = !editable || !lobbySettings.selectedCategoryIds.length;
+}
+
+function changeRoomSettings(categoryIds, scoringMode) {
+    if (!amHost || isActiveGame() || settingsPending || !socket.connected) return;
+    settingsPending = true;
+    document.getElementById("lobby-error").textContent = "";
+    renderLobbySettings();
+    socket.timeout(10000).emit("updateRoomSettings", { code: currentRoom, categoryIds, scoringMode }, (error, response) => {
+        settingsPending = false;
+        if (error || !response?.ok) document.getElementById("lobby-error").textContent = response?.message || "تعذر حفظ إعدادات الغرفة. حاول مجددًا.";
+        renderLobbySettings();
+    });
+}
+document.getElementById("scoring-mode").addEventListener("change", event => changeRoomSettings(lobbySettings.selectedCategoryIds, Number(event.target.value)));
+
 socket.on(
     "lobbyUpdate",
     data => {
@@ -399,6 +475,9 @@ socket.on(
         });
 
         amHost = socket.id === data.hostId;
+        if (data.phase) phase = data.phase;
+        lobbySettings = { categories: data.categories || [], selectedCategoryIds: data.selectedCategoryIds || [], scoringMode: data.scoringMode || 1, availableQuestionCount: data.availableQuestionCount };
+        renderLobbySettings();
         updateControls();
 
         if (amHost) {
@@ -430,10 +509,15 @@ startButton.addEventListener(
     "click",
     () => {
 
-        socket.emit(
+        if (!amHost || !socket.connected) return;
+        document.getElementById("lobby-error").textContent = "";
+        socket.timeout(10000).emit(
             "startGame",
             {
                 code: currentRoom
+            },
+            (error, response) => {
+                if (error || !response?.ok) document.getElementById("lobby-error").textContent = response?.message || "تعذر بدء المباراة. حاول مجددًا.";
             }
         );
     }
@@ -459,7 +543,7 @@ socket.on(
             "answer-message";
 
         questionNumber.textContent =
-            `الجولة ${["الأولى", "الثانية", "الثالثة"][data.round - 1] || data.round} | سؤال ${data.number}`;
+            `الجولة ${["الأولى", "الثانية"][data.round - 1] || data.round} | سؤال ${data.number}`;
 
         questionText.textContent =
             data.question;
@@ -578,7 +662,10 @@ socket.on("questionClosed", data => {
         const index = Array.from(choicesContainer.querySelectorAll("button")).indexOf(selected);
         if (index !== data.correctIndex) selected.classList.add("is-wrong");
     }
-    if (data.winner) {
+    if (data.winners?.length) {
+        const earned = data.winners.find(winner => winner.id === socket.id);
+        answerMessage.textContent = earned ? `إجابة صحيحة! +${earned.awardedPoints} نقطة` : `أجاب ${data.winners.length} من اللاعبين بشكل صحيح.`;
+    } else if (data.winner) {
         answerMessage.textContent = data.winner.id === socket.id ? "سبقت الجميع! +1 نقطة" : `حسم ${data.winner.name} السؤال.`;
     } else if (data.reason === "timeout" || !data.reason) {
         timerElement.textContent = "0";
@@ -642,7 +729,7 @@ function showResults(data, final) {
         currentRound = data.round;
         updateControls();
         document.getElementById("results-title").textContent = final ? "النتائج النهائية" : `نتائج الجولة ${data.round}`;
-        document.getElementById("results-message").textContent = final ? "اكتملت الجولات الثلاث، شكرًا للعبكم!" : "مجموع النقاط حتى نهاية هذه الجولة.";
+        document.getElementById("results-message").textContent = final ? "اكتملت الجولتان، شكرًا للعبكم!" : "انتهت الجولة الأولى. النقاط مستمرة في الجولة الثانية.";
         homeButton.classList.remove("hidden");
         if (!final) homeButton.classList.add("hidden");
 
@@ -741,18 +828,25 @@ document.getElementById("leave-button").addEventListener("click", () => {
     homeButton.click();
 });
 
-homeButton.addEventListener(
-    "click",
-    () => {
-
-        socket.emit("leaveRoom");
-
+function returnHome() {
+    if (isActiveGame()) return;
+    const finish = () => {
         currentRoom = "";
-
+        phase = "lobby";
+        settingsPending = false;
         roomCodeInput.value = "";
-
-        homeError.textContent = "";
-
-        showScreen("home");
-    }
-);
+        clearRoomCodeError();
+        document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
+        document.getElementById("menu-toggle").setAttribute("aria-expanded", "false");
+        updateControls();
+        showScreen(playerName ? "home" : "name");
+    };
+    if (!currentRoom) { finish(); return; }
+    if (!socket.connected) return;
+    socket.timeout(10000).emit("leaveRoom", {}, (error, response) => {
+        if (!error && response?.ok) finish();
+        else document.getElementById("lobby-error").textContent = response?.message || "تعذر مغادرة الغرفة. حاول مجددًا.";
+    });
+}
+homeButton.addEventListener("click", returnHome);
+document.getElementById("home-logo").addEventListener("click", returnHome);

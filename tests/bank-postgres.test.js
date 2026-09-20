@@ -13,7 +13,7 @@ test('PostgreSQL migration, CRUD, permissions, conflict protection and restart p
     t.after(async () => { await db.close(); await rm(dir, { recursive: true, force: true }); });
     const migration = await readFile(path.join(__dirname, '../migrations/001_wamda_banks.sql'), 'utf8');
     function newStore() {
-        return createQuestionStore({ required: 15, env: { DATABASE_URL: 'local-test-adapter', RENDER: 'true' },
+        return createQuestionStore({ required: 20, env: { DATABASE_URL: 'local-test-adapter', RENDER: 'true' },
             logger: { info() {}, error() {} },
             connect: async () => ({ query: (sql, values) => db.query(sql, values), end: async () => {} }) });
     }
@@ -26,7 +26,7 @@ test('PostgreSQL migration, CRUD, permissions, conflict protection and restart p
     let state = store.snapshot();
     assert.equal(state.writable, true);
     assert.equal((await db.query('SELECT count(*)::int AS count FROM public.wamda_banks')).rows[0].count, 1);
-    const originalGame = store.gameQuestions();
+    const originalGame = store.gameQuestions(['legacy']);
     async function mutate(payload) { state = await store.mutate({ ...payload, revision: state.revision }); return state; }
     // Deleting a bundled default question must survive refresh and a new store.
     await mutate({ action: 'deleteQuestion', bankId: 'default', questionId: 'default-0' });
@@ -37,19 +37,21 @@ test('PostgreSQL migration, CRUD, permissions, conflict protection and restart p
     await mutate({ action: 'createBank', name: 'العائلة' });
     const bankId = state.banks.at(-1).id;
     await mutate({ action: 'renameBank', bankId, name: 'تحدي العائلة' });
-    await assert.rejects(mutate({ action: 'activateBank', bankId }), /15/);
-    const questions = Array.from({ length: 15 }, (_, i) => ({ question: `سؤال جديد ${i}`, choices: ['الأول', 'الثاني', 'الثالث', 'الرابع'], correct: 0 }));
+    await assert.rejects(mutate({action:'activateBank',bankId}),/20/);
+    const questions = Array.from({ length: 20 }, (_, i) => ({ question: `سؤال جديد ${i}`, choices: ['الأول', 'الثاني', 'الثالث', 'الرابع'], correct: 0, categoryId:'legacy' }));
     await mutate({ action: 'importQuestions', bankId, questions });
     await mutate({ action: 'saveQuestion', bankId, question: { ...questions[0], question: 'سؤال إضافي' } });
     const added = state.banks.find(b => b.id === bankId).questions[0];
     await mutate({ action: 'saveQuestion', bankId, questionId: added.id, question: { ...added, question: 'سؤال معدّل', correct: 2 } });
     await mutate({ action: 'activateBank', bankId });
-    assert.equal(store.gameQuestions()[0].question, 'سؤال معدّل');
-    assert.equal(store.gameQuestions()[0].correct, 2);
-    assert.notEqual(originalGame[0].question, store.gameQuestions()[0].question);
+    assert.equal(store.snapshot().banks.at(-1).questions[0].question, 'سؤال معدّل');
+    assert.equal(store.snapshot().banks.at(-1).questions[0].correct, 2);
+    assert.notEqual(originalGame[0].question, store.gameQuestions(['legacy'])[0].question);
     await assert.rejects(mutate({ action: 'deleteBank', bankId }), /فعّل بنكًا آخر/);
     await mutate({ action: 'deleteQuestion', bankId, questionId: added.id });
-    await assert.rejects(mutate({ action: 'deleteQuestion', bankId, questionId: state.banks.at(-1).questions[0].id }), /15/);
+    await mutate({ action: 'deleteQuestion', bankId, questionId: state.banks.at(-1).questions[0].id });
+    assert.throws(()=>store.gameQuestions(['legacy']),/كافية/);
+    await mutate({action:'saveQuestion',bankId,question:{...questions[0],question:'بديل'}});
     // All remaining defaults may be deleted once another bank is active.
     for (const question of state.banks.find(b => b.id === 'default').questions) {
         await mutate({ action: 'deleteQuestion', bankId: 'default', questionId: question.id });
@@ -86,6 +88,6 @@ test('PostgreSQL migration, CRUD, permissions, conflict protection and restart p
     const restarted = newStore(); await restarted.init();
     assert.equal(restarted.snapshot().activeBankId, bankId);
     assert.equal(restarted.snapshot().banks[0].name, 'اسم أحدث');
-    assert.equal(restarted.gameQuestions()[0].question, 'سؤال جديد 0');
+    assert.equal(restarted.gameQuestions(['legacy']).length, 20);
     assert.equal(restarted.snapshot().revision, before.revision);
 });

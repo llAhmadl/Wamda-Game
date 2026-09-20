@@ -50,18 +50,19 @@ test('admin authentication, logout, connection stats, rename, validation and rat
     state = await request(admin, 'adminMutate', { action: 'createBank', name: 'العائلة', revision: state.revision });
     assert.equal(state.ok, true); assert.equal(state.banks.length, 2);
     const bankId = state.banks.at(-1).id;
-    for (const action of ['saveQuestion', 'deleteQuestion', 'renameBank', 'deleteBank', 'activateBank', 'importQuestions']) {
+    for (const action of ['saveQuestion', 'deleteQuestion', 'renameBank', 'deleteBank', 'activateBank', 'importQuestions', 'createCategory', 'updateCategory', 'deleteCategory']) {
         assert.equal((await request(player, 'adminMutate', { action, bankId, revision: state.revision })).unauthorized, true);
     }
     state = await request(admin, 'adminMutate', { action: 'renameBank', bankId, name: 'بنك جديد', revision: state.revision });
     assert.equal(state.banks.at(-1).name, 'بنك جديد');
     state = await request(admin, 'adminMutate', { action: 'importQuestions', bankId, revision: state.revision,
-        questions: Array.from({ length: 15 }, (_, i) => ({ question: `سؤال من البنك المفعّل ${i}`, choices: ['أ', 'ب', 'ج', 'د'], correct: 0 })) });
+        questions: Array.from({ length: 20 }, (_, i) => ({ question: `سؤال من البنك المفعّل ${i}`, choices: ['أ', 'ب', 'ج', 'د'], correct: 0, categoryId:'legacy' })) });
     state = await request(admin, 'adminMutate', { action: 'activateBank', bankId, revision: state.revision });
     assert.equal(state.activeBankId, bankId);
+    assert.equal((await request(player, 'updateRoomSettings', { code: room.code, categoryIds: ['legacy'], scoringMode:1 })).ok,true);
     const firstQuestion = new Promise(resolve => player.once('question', resolve));
     player.emit('startGame', { code: room.code });
-    assert.equal((await firstQuestion).question, 'سؤال من البنك المفعّل 0');
+    assert.match((await firstQuestion).question, /سؤال من البنك المفعّل/);
     const protectedBank = await request(admin, 'adminMutate', { action: 'deleteBank', bankId, revision: state.revision });
     assert.equal(protectedBank.ok, false);
     state = await request(admin, 'adminMutate', { action: 'deleteBank', bankId: 'default', revision: state.revision });

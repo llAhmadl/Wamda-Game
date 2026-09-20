@@ -1,0 +1,9 @@
+.admin-category-preview { display: block; width: min(240px, 100%); height: auto; aspect-ratio: 4 / 3; object-fit: cover; margin-top: 16px; border: 1px solid var(--border); border-radius: 12px; }
+.admin-category-preview.hidden { display: none; }
+#category-editor-title { margin: 18px 0 0; font-size: 16px; }
+.admin-category { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
+.admin-category-image { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 9px; background: var(--surface-muted); }
+.admin-category-name { margin: 0; overflow-wrap: anywhere; font-size: 16px; font-weight: 700; }
+.admin-category .helper-message { margin: 2px 0 0; }
+.admin-category-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; grid-column: 1 / -1; }
+.developer-dialog .admin-toolbar { flex-wrap: wrap; }

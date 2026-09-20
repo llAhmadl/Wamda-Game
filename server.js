@@ -7,7 +7,7 @@ const { version: siteVersion } = require("./package.json");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { maxHttpBufferSize: 2 * 1024 * 1024 + 64 * 1024 });
 
 const PORT = Number(process.env.PORT ?? 3000);
 
@@ -18,22 +18,25 @@ app.get("/api/site", (req, res) => {
 
 app.get("/api/version", (req, res) => {
     res.set("Cache-Control", "no-store");
-    res.json({ version: "wamda-first-correct-v2", rounds: TOTAL_ROUNDS, questionsPerRound: QUESTIONS_PER_ROUND, duration: DURATION });
+    res.json({ version: siteVersion, rounds: TOTAL_ROUNDS, questionsPerRound: QUESTIONS_PER_ROUND, duration: DURATION });
 });
+app.get("/favicon.png", (req, res) => res.sendFile(path.join(__dirname, "favicon.png")));
 app.use(express.static(path.join(__dirname, "public"), {
-    setHeaders(res) { res.set("Cache-Control", "no-store"); }
+    setHeaders(res, filename) { res.set("Cache-Control", /\.(webp|svg|ttf)$/.test(filename) ? "public, max-age=3600" : "no-store"); }
 }));
 
 // -------------------------
 // Questions
 // -------------------------
 
-const QUESTIONS_PER_ROUND = 5;
-const TOTAL_ROUNDS = 3;
+const QUESTIONS_PER_ROUND = 10;
+const TOTAL_ROUNDS = 2;
 const DURATION = 20;
 const { createQuestionStore } = require("./lib/question-store");
 const { installAdmin } = require("./lib/admin");
+const { installCategoryImages } = require("./lib/category-images");
 const questionStore = createQuestionStore({ required: QUESTIONS_PER_ROUND * TOTAL_ROUNDS });
+installCategoryImages(app, questionStore);
 
 
 // -------------------------
@@ -84,10 +87,18 @@ function sendLobby(roomCode) {
         return;
     }
 
+    const categories = questionStore.publicCategories();
+    if (!room.started) room.selectedCategoryIds = room.selectedCategoryIds.filter(id => categories.some(category => category.id === id));
     io.to(roomCode).emit("lobbyUpdate", {
         code: roomCode,
         hostId: room.hostId,
-        players: getPlayers(room)
+        players: getPlayers(room),
+        categories,
+        availableQuestionCount: questionStore.availableQuestionCount(room.selectedCategoryIds),
+        selectedCategoryIds: room.selectedCategoryIds,
+        scoringMode: room.scoringMode,
+        phase: room.phase,
+        started: room.started
     });
 }
 
@@ -139,6 +150,7 @@ function sendQuestion(roomCode) {
     const question = room.questions[room.questionIndex];
     room.phase = "question";
     room.winner = null;
+    room.winners = [];
     room.deadline = Date.now() + DURATION * 1000;
     for (const player of room.players.values()) player.answered = false;
     io.to(roomCode).emit("question", {
@@ -147,7 +159,9 @@ function sendQuestion(roomCode) {
         total: QUESTIONS_PER_ROUND,
         round: Math.floor(room.questionIndex / QUESTIONS_PER_ROUND) + 1,
         rounds: TOTAL_ROUNDS,
-        question: question.question, choices: question.choices, duration: DURATION
+        question: question.question, choices: question.choices, duration: DURATION,
+        categoryId: question.categoryId,
+        scoringMode: room.scoringMode
     });
     clearTimeout(room.timer);
     room.timer = setTimeout(() => closeQuestion(roomCode), DURATION * 1000);
@@ -163,7 +177,8 @@ function closeQuestion(roomCode) {
         correctIndex: room.questions[room.questionIndex].correct,
         lastInRound: (room.questionIndex + 1) % QUESTIONS_PER_ROUND === 0,
         winner: room.winner,
-        reason: room.winner ? "winner" : Date.now() >= room.deadline ? "timeout" : "answered"
+        winners: room.winners,
+        reason: room.winners.length >= room.scoringMode ? "winner" : Date.now() >= room.deadline ? "timeout" : "answered"
     });
 }
 
@@ -190,8 +205,9 @@ function nextQuestion(roomCode) {
 // -------------------------
 
 io.on("connection", (socket) => {
-
-    console.log("Player connected:", socket.id);
+    const replyTo = callback => typeof callback === "function" ? callback : () => {};
+    const activeRoom = () => rooms.get(socket.data.roomCode)?.started;
+    const activeMessage = "لا يمكنك مغادرة الغرفة أثناء المباراة.";
 
     socket.on("changeName", (payload, reply) => {
         if (typeof reply !== "function") return;
@@ -207,9 +223,10 @@ io.on("connection", (socket) => {
     });
 
     // CREATE ROOM
-    socket.on("createRoom", ({ name }, callback) => {
-
-        const playerName = cleanName(name);
+    socket.on("createRoom", (payload, callback) => {
+        callback = replyTo(callback);
+        if (activeRoom()) return callback({ ok: false, message: activeMessage });
+        const playerName = cleanName(payload?.name);
 
         if (!playerName) {
 
@@ -233,6 +250,8 @@ io.on("connection", (socket) => {
 
             started: false,
             phase: "lobby",
+            selectedCategoryIds: [],
+            scoringMode: 1,
 
             questionIndex: 0,
 
@@ -264,13 +283,15 @@ io.on("connection", (socket) => {
     // JOIN ROOM
     socket.on(
         "joinRoom",
-        ({ name, code }, callback) => {
+        (payload, callback) => {
+            callback = replyTo(callback);
+            if (activeRoom()) return callback({ ok: false, message: activeMessage });
 
             const playerName =
-                cleanName(name);
+                cleanName(payload?.name);
 
             const roomCode =
-                String(code || "")
+                (typeof payload?.code === "string" ? payload.code : "")
                     .trim()
                     .toUpperCase();
 
@@ -307,6 +328,12 @@ io.on("connection", (socket) => {
                 return;
             }
 
+            if (socket.data.roomCode === roomCode) {
+                callback({ ok: true, code: roomCode });
+                sendLobby(roomCode);
+                return;
+            }
+
             removePlayer(socket);
 
             room.players.set(socket.id, {
@@ -331,21 +358,37 @@ io.on("connection", (socket) => {
     );
 
 
+    socket.on("updateRoomSettings", (payload, callback) => {
+        callback = replyTo(callback);
+        const room = rooms.get(payload?.code);
+        if (!room || room.hostId !== socket.id) return callback({ ok: false, message: "المضيف فقط يستطيع تغيير إعدادات الغرفة." });
+        if (room.started) return callback({ ok: false, message: "لا يمكن تغيير الإعدادات أثناء المباراة." });
+        const categoryIds = payload?.categoryIds;
+        const categories = questionStore.publicCategories();
+        if (!Array.isArray(categoryIds) || categoryIds.length > categories.length ||
+            categoryIds.some(id => typeof id !== "string" || !categories.some(category => category.id === id)) ||
+            new Set(categoryIds).size !== categoryIds.length || ![1, 3, 4].includes(payload.scoringMode)) {
+            return callback({ ok: false, message: "اختر تصنيفات ونظام نقاط صالحًا." });
+        }
+        room.selectedCategoryIds = [...categoryIds];
+        room.scoringMode = payload.scoringMode;
+        sendLobby(payload.code);
+        callback({ ok: true });
+    });
+
     // START GAME
-    socket.on("startGame", ({ code }) => {
-
-        const room =
-            rooms.get(code);
-
-        if (!room) {
-            return;
+    socket.on("startGame", (payload, callback) => {
+        callback = replyTo(callback);
+        const code = payload?.code;
+        const room = rooms.get(code);
+        if (!room || room.hostId !== socket.id) return callback({ ok: false, message: "المضيف فقط يستطيع بدء المباراة." });
+        if (room.started) return callback({ ok: false, message: "بدأت اللعبة بالفعل." });
+        if (!room.selectedCategoryIds.length) return callback({ ok: false, message: "اختر تصنيفًا واحدًا على الأقل." });
+        try {
+            room.questions = questionStore.gameQuestions(room.selectedCategoryIds);
+        } catch (error) {
+            return callback({ ok: false, message: error.message });
         }
-
-        if (room.hostId !== socket.id || room.started) {
-            return;
-        }
-
-        room.questions = questionStore.gameQuestions();
         room.started = true;
 
         room.questionIndex = 0;
@@ -358,13 +401,15 @@ io.on("connection", (socket) => {
         }
 
         sendQuestion(code);
+        callback({ ok: true });
     });
 
 
     // ANSWER
     socket.on(
         "submitAnswer",
-        ({ code, answerIndex, questionId }) => {
+        (payload) => {
+            const { code, answerIndex, questionId } = payload || {};
 
             const room =
                 rooms.get(code);
@@ -390,13 +435,18 @@ io.on("connection", (socket) => {
             const correct =
                 answerIndex === question.correct;
 
-            if (correct) {
-                player.score++;
-                room.winner = { id: socket.id, name: player.name };
+            let awardedPoints = 0;
+            let rank = null;
+            if (correct && room.winners.length < room.scoringMode) {
+                rank = room.winners.length + 1;
+                awardedPoints = room.scoringMode !== 1 && rank === 1 ? 2 : 1;
+                player.score += awardedPoints;
+                room.winners.push({ id: socket.id, name: player.name, rank, awardedPoints });
+                room.winner = room.winners[0];
             }
 
             socket.emit("answerResult", {
-                correct, correctIndex: question.correct
+                correct, correctIndex: question.correct, awardedPoints, rank
             });
 
 
@@ -408,17 +458,19 @@ io.on("connection", (socket) => {
                     player => player.answered
                 );
 
-            if (correct || everyoneAnswered) closeQuestion(code);
+            if (room.winners.length >= room.scoringMode || everyoneAnswered) closeQuestion(code);
         }
     );
 
 
-    socket.on("nextQuestion", ({ code, questionId }) => {
+    socket.on("nextQuestion", (payload) => {
+        const { code, questionId } = payload || {};
         const room = rooms.get(code);
         if (room?.hostId === socket.id && questionId === room.questionIndex) nextQuestion(code);
     });
 
-    socket.on("nextRound", ({ code, round }) => {
+    socket.on("nextRound", (payload) => {
+        const { code, round } = payload || {};
         const room = rooms.get(code);
         if (room?.hostId !== socket.id || room.phase !== "roundResults" || round !== Math.floor(room.questionIndex / QUESTIONS_PER_ROUND) + 1) return;
         room.questionIndex++;
@@ -426,25 +478,26 @@ io.on("connection", (socket) => {
     });
 
     // LEAVE ROOM
-    socket.on("leaveRoom", () => {
-
+    socket.on("leaveRoom", (payload, callback) => {
+        callback = replyTo(typeof payload === "function" ? payload : callback);
+        if (activeRoom()) return callback({ ok: false, message: activeMessage });
         removePlayer(socket);
+        callback({ ok: true });
     });
 
 
     // DISCONNECT
     socket.on("disconnect", () => {
 
-        console.log(
-            "Player disconnected:",
-            socket.id
-        );
-
         removePlayer(socket);
     });
 });
 
-installAdmin(io, rooms, questionStore);
+installAdmin(io, rooms, questionStore, {
+    onChanged() {
+        for (const [code, room] of rooms) if (!room.started) sendLobby(code);
+    }
+});
 
 // Start server
 

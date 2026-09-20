@@ -8,6 +8,9 @@
     let session = false;
     let model = null;
     let editing = null;
+    let editingCategory = null;
+    let categoryImage = '';
+    let categoryPreviewUrl = null;
     let polling = null;
     let busy = false;
     const message = text => { el('developer-message').textContent = text; };
@@ -83,10 +86,12 @@
     function resetSession() {
         session = false; model = null; editing = null;
         clearInterval(polling);
+        resetCategoryEditor();
         el('developer-code').value = '';
         el('developer-content').classList.add('hidden');
         el('developer-login').classList.remove('hidden');
         el('bank-questions').textContent = '';
+        el('category-list').textContent = '';
         el('online-players').textContent = '';
     }
     function renderStats(stats) {
@@ -105,11 +110,87 @@
         el('question-editor-title').textContent = 'إضافة سؤال';
         el('cancel-edit').classList.add('hidden');
     }
+    function previewCategoryImage(source = '') {
+        if (categoryPreviewUrl) URL.revokeObjectURL(categoryPreviewUrl);
+        categoryPreviewUrl = null;
+        const preview = el('category-preview');
+        if (source instanceof Blob) {
+            categoryPreviewUrl = URL.createObjectURL(source);
+            source = categoryPreviewUrl;
+        }
+        if (source) {
+            preview.src = source;
+            preview.classList.remove('hidden');
+        } else {
+            preview.removeAttribute('src');
+            preview.classList.add('hidden');
+        }
+    }
+    function resetCategoryEditor() {
+        editingCategory = null; categoryImage = '';
+        el('category-form').reset();
+        el('category-editor-title').textContent = 'إضافة تصنيف';
+        el('category-save').textContent = 'حفظ التصنيف';
+        el('cancel-category-edit').classList.add('hidden');
+        previewCategoryImage();
+    }
+    function renderCategoryOptions(id, placeholder) {
+        const select = el(id), previous = select.value;
+        select.textContent = '';
+        const empty = document.createElement('option');
+        empty.value = ''; empty.textContent = placeholder;
+        select.appendChild(empty);
+        model.categories.forEach(category => {
+            const option = document.createElement('option');
+            option.value = category.id; option.textContent = category.name;
+            select.appendChild(option);
+        });
+        select.value = model.categories.some(category => category.id === previous) ? previous : '';
+    }
+    function renderCategories() {
+        renderCategoryOptions('edit-category', 'اختر التصنيف');
+        renderCategoryOptions('import-category', 'استخدام تصنيف كل سؤال في الملف');
+        el('category-image-storage').textContent = model.imagesWritable ? `حفظ الصور: ${model.imageStorage}` : (model.imageStorage || 'رفع الصور غير متاح حاليًا.');
+        el('category-image').disabled = !model.writable || !model.imagesWritable;
+        const list = el('category-list'); list.textContent = '';
+        model.categories.forEach(category => {
+            const row = document.createElement('article'); row.className = 'admin-category';
+            const image = document.createElement('img'); image.className = 'admin-category-image';
+            image.alt = ''; image.width = 72; image.height = 72; image.loading = 'lazy'; image.decoding = 'async';
+            if (category.image) image.src = category.image;
+            const details = document.createElement('div');
+            const name = document.createElement('p'); name.className = 'admin-category-name'; name.textContent = category.name;
+            const linked = model.banks.reduce((count, bank) => count + bank.questions.filter(question => question.categoryId === category.id).length, 0);
+            const count = document.createElement('p'); count.className = 'helper-message'; count.textContent = `${linked} سؤالًا مرتبطًا`;
+            details.append(name, count);
+            const actions = document.createElement('div'); actions.className = 'admin-category-actions';
+            const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary compact-button'; edit.textContent = 'تعديل'; edit.disabled = !model.writable;
+            edit.addEventListener('click', () => {
+                resetCategoryEditor();
+                editingCategory = category.id; categoryImage = category.image;
+                el('category-editor-title').textContent = 'تعديل التصنيف';
+                el('category-name').value = category.name;
+                previewCategoryImage(category.image);
+                el('cancel-category-edit').classList.remove('hidden');
+                el('category-name').focus();
+            });
+            const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'text-button'; remove.textContent = 'حذف'; remove.disabled = !model.writable;
+            remove.addEventListener('click', async () => {
+                if (linked) { message(`لا يمكن حذف «${category.name}»: يرتبط به ${linked} سؤالًا. انقل الأسئلة إلى تصنيف آخر أولًا.`); return; }
+                if (!window.confirm(`حذف تصنيف «${category.name}»؟`)) return;
+                if (await mutate({ action: 'deleteCategory', categoryId: category.id })) {
+                    if (editingCategory === category.id) resetCategoryEditor();
+                }
+            });
+            actions.append(edit, remove); row.append(image, details, actions); list.appendChild(row);
+        });
+        if (!model.categories.length) list.textContent = 'لا توجد تصنيفات بعد. أضف التصنيف الأول من النموذج أعلاه.';
+    }
     function renderBank() {
         const bank = selectedBank();
         if (!bank) return;
         const active = bank.id === model.activeBankId;
-        el('bank-status').textContent = `${bank.questions.length} سؤالًا${active ? ' · مستخدم للعب' : ''} · يلزم ${model.required} سؤالًا لتفعيل البنك. تُستخدم أول ${model.required} أسئلة، وتضاف الأسئلة الجديدة في البداية.`;
+        el('bank-status').textContent = `${bank.questions.length} سؤالًا${active ? ' · مستخدم للعب' : ''} · يلزم ${model.required} سؤالًا لتفعيل البنك. تُختار ${model.required} سؤالًا عشوائيًا من تصنيفات المضيف داخل البنك المفعّل، بدون تكرار.`;
         el('activate-bank').disabled = !model.writable || active || bank.questions.length < model.required;
         el('rename-bank-name').value = bank.name;
         el('delete-bank').disabled = !model.writable || active;
@@ -117,6 +198,7 @@
         bank.questions.forEach(question => {
             const row = document.createElement('article'); row.className = 'admin-question';
             const text = document.createElement('p'); text.textContent = question.question;
+            const category = document.createElement('p'); category.className = 'helper-message'; category.textContent = `التصنيف: ${model.categories.find(item => item.id === question.categoryId)?.name || 'غير محدد'}`;
             const answer = document.createElement('p'); answer.className = 'helper-message'; answer.textContent = `الإجابة: ${question.choices[question.correct]}`;
             const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'secondary compact-button'; edit.textContent = 'تعديل'; edit.disabled = !model.writable;
             edit.addEventListener('click', () => {
@@ -125,18 +207,19 @@
                 el('edit-question').value = question.question;
                 question.choices.forEach((choice, i) => { el(`edit-choice-${i}`).value = choice; });
                 el('edit-correct').value = question.correct;
+                el('edit-category').value = question.categoryId;
                 el('cancel-edit').classList.remove('hidden'); el('edit-question').focus();
             });
             const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'text-button'; remove.textContent = 'حذف'; remove.disabled = !model.writable;
             remove.addEventListener('click', () => {
                 if (window.confirm('حذف هذا السؤال من البنك؟')) mutate({ action: 'deleteQuestion', bankId: bank.id, questionId: question.id });
             });
-            row.append(text, answer, edit, remove); el('bank-questions').appendChild(row);
+            row.append(text, category, answer, edit, remove); el('bank-questions').appendChild(row);
         });
     }
     function render(data, preferredBank) {
         const previous = preferredBank || el('bank-select').value;
-        model = data;
+        model = { ...data, categories: data.categories || [] };
         el('bank-select').textContent = '';
         data.banks.forEach(bank => {
             const option = document.createElement('option'); option.value = bank.id; option.textContent = bank.name;
@@ -144,8 +227,10 @@
         });
         el('bank-select').value = data.banks.some(bank => bank.id === previous) ? previous : data.activeBankId;
         el('storage-status').textContent = `الحفظ: ${data.storage}`;
-        ['bank-form', 'rename-bank-form', 'question-form'].forEach(id => el(id).querySelectorAll('input, button, textarea, select').forEach(input => { input.disabled = !data.writable; }));
+        ['bank-form', 'rename-bank-form', 'question-form', 'category-form'].forEach(id => el(id).querySelectorAll('input, button, textarea, select').forEach(input => { input.disabled = !data.writable; }));
         el('import-bank').disabled = !data.writable;
+        el('import-category').disabled = !data.writable;
+        renderCategories();
         renderBank();
         if (data.stats) renderStats(data.stats);
     }
@@ -179,18 +264,29 @@
         } catch (error) { message(error.message); }
         finally { busy = false; }
     });
-    async function mutate(payload) {
-        if (busy || !model) return;
+    async function mutate(payload, imageFile = null) {
+        if (busy || !model) return false;
         busy = true; message('جارٍ الحفظ...');
         el('developer-content').inert = true;
         try {
+            if (imageFile) {
+                message('جارٍ رفع صورة التصنيف...'); el('category-save').textContent = 'جارٍ رفع الصورة...';
+                const upload = await request('adminUploadCategoryImage', { data: await imageFile.arrayBuffer(), type: imageFile.type });
+                categoryImage = upload.image; payload.image = upload.image;
+                el('category-image').value = '';
+                previewCategoryImage(upload.image);
+            }
             const data = await request('adminMutate', { ...payload, revision: model.revision });
             const preferred = payload.action === 'createBank' ? data.banks.at(-1).id : null;
-            render(data, preferred); resetEditor(); message('تم الحفظ. التغييرات تطبّق على المباريات الجديدة.');
-        } catch (error) { message(error.message); }
-        finally { busy = false; el('developer-content').inert = false; }
+            render(data, preferred);
+            if (!payload.action.endsWith('Category')) resetEditor();
+            message('تم الحفظ. إعدادات وأسئلة المباريات الجارية تبقى كما بدأت.');
+            return true;
+        } catch (error) { message(error.message); return false; }
+        finally { busy = false; el('developer-content').inert = false; el('category-save').textContent = 'حفظ التصنيف'; }
     }
     el('admin-refresh').addEventListener('click', refresh);
+    el('developer-home').addEventListener('click', () => returnHome());
     el('admin-logout').addEventListener('click', async () => {
         try { await request('adminLogout'); resetSession(); message('تم تسجيل الخروج.'); }
         catch (error) { message(error.message); }
@@ -198,6 +294,25 @@
     socket.on('disconnect', () => { resetSession(); message('انقطع الاتصال. سجّل الدخول مجددًا.'); });
     el('bank-select').addEventListener('change', () => { resetEditor(); renderBank(); });
     el('cancel-edit').addEventListener('click', resetEditor);
+    el('cancel-category-edit').addEventListener('click', resetCategoryEditor);
+    el('category-image').addEventListener('change', event => {
+        const file = event.target.files[0];
+        if (!file) { previewCategoryImage(categoryImage); return; }
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+            event.target.value = ''; previewCategoryImage(categoryImage);
+            message('اختر صورة JPG أو PNG أو WebP لا تتجاوز 2 ميجابايت.');
+            return;
+        }
+        previewCategoryImage(file); message('');
+    });
+    el('category-form').addEventListener('submit', async event => {
+        event.preventDefault();
+        const file = el('category-image').files[0];
+        if (!file && !categoryImage) { message('أضف صورة للتصنيف قبل الحفظ.'); return; }
+        const saved = await mutate({ action: editingCategory ? 'updateCategory' : 'createCategory', categoryId: editingCategory,
+            name: el('category-name').value, image: categoryImage }, file);
+        if (saved) resetCategoryEditor();
+    });
     el('rename-bank-form').addEventListener('submit', event => {
         event.preventDefault();
         mutate({ action: 'renameBank', bankId: el('bank-select').value, name: el('rename-bank-name').value });
@@ -213,7 +328,7 @@
     el('question-form').addEventListener('submit', event => {
         event.preventDefault();
         mutate({ action: 'saveQuestion', bankId: el('bank-select').value, questionId: editing, question: {
-            question: el('edit-question').value, choices: [0,1,2,3].map(i => el(`edit-choice-${i}`).value), correct: Number(el('edit-correct').value)
+            question: el('edit-question').value, choices: [0,1,2,3].map(i => el(`edit-choice-${i}`).value), correct: Number(el('edit-correct').value), categoryId: el('edit-category').value
         } });
     });
     el('import-bank').addEventListener('change', async event => {
@@ -222,7 +337,7 @@
         try {
             if (file.size > 500000) throw Error('اختر ملفًا أصغر من 500 كيلوبايت.');
             const data = JSON.parse(await file.text());
-            await mutate({ action: 'importQuestions', bankId: el('bank-select').value, questions: Array.isArray(data) ? data : data.questions });
+            await mutate({ action: 'importQuestions', bankId: el('bank-select').value, questions: Array.isArray(data) ? data : data.questions, categoryId: el('import-category').value });
         } catch { message('تعذر قراءة الملف. استخدم ملف JSON صالحًا، أصغر من 500 كيلوبايت.'); }
         event.target.value = '';
     });

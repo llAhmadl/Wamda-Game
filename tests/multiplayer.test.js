@@ -47,14 +47,14 @@ test("two real clients: all questions, scores, host transfer and question timeou
         });
     });
 
-    for (const file of ["/", "/style.css", "/theme.js", "/name-validation.js", "/app.js", "/settings.js", "/socket.io/socket.io.js"]) {
+    for (const file of ["/", "/style.css", "/theme.js", "/name-validation.js", "/app.js", "/settings.js", "/favicon.png", "/categories.css", "/images/categories/islamic.webp", "/socket.io/socket.io.js"]) {
         const response = await fetch(baseUrl + file);
         assert.equal(response.status, 200, file);
     }
 
     const versionResponse = await fetch(baseUrl + "/api/version");
     assert.equal(versionResponse.headers.get("cache-control"), "no-store");
-    assert.deepEqual(await versionResponse.json(), { version: "wamda-first-correct-v2", rounds: 3, questionsPerRound: 5, duration: 20 });
+    assert.deepEqual(await versionResponse.json(), { version: require("../package.json").version, rounds: 2, questionsPerRound: 10, duration: 20 });
     const siteResponse = await fetch(baseUrl + "/api/site");
     assert.equal(siteResponse.headers.get("cache-control"), "no-store");
     assert.deepEqual(await siteResponse.json(), { version: require("../package.json").version });
@@ -79,19 +79,27 @@ test("two real clients: all questions, scores, host transfer and question timeou
     assert.equal((await request(guest, "joinRoom", { name: "Player two", code: created.code.toLowerCase() })).ok, true);
     assert.equal((await lobby).players.length, 2);
 
+    assert.equal((await request(host,'startGame',{code:created.code})).ok,false);
+    assert.equal((await request(guest,'updateRoomSettings',{code:created.code,categoryIds:['legacy'],scoringMode:4})).ok,false);
+    assert.equal((await request(host,'updateRoomSettings',{code:created.code,categoryIds:['islamic'],scoringMode:1})).ok,true);
+    assert.equal((await request(host,'startGame',{code:created.code})).ok,false);
+    await request(host,'updateRoomSettings',{code:created.code,categoryIds:['legacy'],scoringMode:1});
+    const seen=new Set();
     let questions = Promise.all([nextEvent(host, "question"), nextEvent(guest, "question")]);
     host.emit("startGame", { code: created.code });
-    const answers = [1,2,0,1,0,1,2,0,3,1,2,0,3,1,2,0,3,1,2,0,1,2,0,3,1,2,0,3,1,2];
+    const defaults=require('../lib/default-questions.json');
     let finish;
     const scoresExpected = new Map([[host.id, 0], [guest.id, 0]]);
-    for (let round = 0; round < 15; round++) {
+    for (let round = 0; round < 20; round++) {
         const [a, b] = await questions;
+        const correct=defaults.find(q=>q.question===a.question).correct;
+        assert.ok(!seen.has(a.question));seen.add(a.question);
         assert.deepEqual(a, b, "Both clients receive the same question");
-        assert.equal(a.number, round % 5 + 1);
+        assert.equal(a.number, round % 10 + 1);
         assert.equal(a.duration, 20);
-        assert.equal(a.round, Math.floor(round / 5) + 1);
-        assert.equal(a.rounds, 3);
-        assert.equal(a.total, 5);
+        assert.equal(a.round, Math.floor(round / 10) + 1);
+        assert.equal(a.rounds, 2);
+        assert.equal(a.total, 10);
         assert.match(a.question, /[\u0600-\u06ff]/);
         assert.equal(a.choices.length, 4);
         if (round === 0) {
@@ -103,19 +111,19 @@ test("two real clients: all questions, scores, host transfer and question timeou
         const closed = Promise.all([nextEvent(host, "questionClosed"), nextEvent(guest, "questionClosed")]);
         if (round === 0) {
             const wrong = nextEvent(guest, "answerResult");
-            guest.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: (answers[round] + 1) % 4 });
+            guest.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: (correct + 1) % 4 });
             assert.equal((await wrong).correct, false, "A wrong answer must not award a point or end the question");
         }
         // Both clients race with a correct answer. The server must choose exactly one.
         const first = round === 1 ? guest : host;
         const second = round === 1 ? host : guest;
-        first.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: answers[round] });
-        second.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: answers[round] });
-        first.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: answers[round] });
+        first.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: correct });
+        second.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: correct });
+        first.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: correct });
         const [hostClosed, guestClosed] = await closed;
         assert.deepEqual(hostClosed, guestClosed);
         assert.equal(hostClosed.reason, "winner");
-        assert.equal(hostClosed.correctIndex, answers[round]);
+        assert.equal(hostClosed.correctIndex, correct);
         assert.ok(scoresExpected.has(hostClosed.winner.id));
         scoresExpected.set(hostClosed.winner.id, scoresExpected.get(hostClosed.winner.id) + 1);
         let autoAdvanced = false;
@@ -125,13 +133,13 @@ test("two real clients: all questions, scores, host transfer and question timeou
         await new Promise(resolve => setTimeout(resolve, round === 0 ? 1100 : 10));
         host.off("question", onQuestion);
         assert.equal(autoAdvanced, false, "No automatic or guest-controlled advancement");
-        if (round === 14) {
+        if (round === 19) {
             finish = Promise.all([nextEvent(host, "gameOver"), nextEvent(guest, "gameOver")]);
-        } else if ((round + 1) % 5 === 0) {
+        } else if ((round + 1) % 10 === 0) {
             const results = nextEvent(host, "roundOver");
             host.emit("nextQuestion", { code: created.code, questionId: round });
             const scores = await results;
-            assert.equal(scores.round, (round + 1) / 5);
+            assert.equal(scores.round, (round + 1) / 10);
             assert.equal(scores.ranking.reduce((sum, p) => sum + p.score, 0), round + 1);
             scores.ranking.forEach(p => assert.equal(p.score, scoresExpected.get(p.id)));
             questions = Promise.all([nextEvent(host, "question"), nextEvent(guest, "question")]);
@@ -146,7 +154,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
 
     const [hostEnd, guestEnd] = await finish;
     assert.deepEqual(hostEnd, guestEnd);
-    assert.equal(hostEnd.ranking.reduce((sum, player) => sum + player.score, 0), 15);
+    assert.equal(hostEnd.ranking.reduce((sum, player) => sum + player.score, 0), 20);
     hostEnd.ranking.forEach(player => assert.equal(player.score, scoresExpected.get(player.id)));
     const promoted = nextEvent(guest, "lobbyUpdate", data => data.hostId === guest.id);
     host.disconnect();
@@ -154,11 +162,13 @@ test("two real clients: all questions, scores, host transfer and question timeou
 
     // The real 20-second deadline closes answers and waits for the host.
     const fresh = await request(guest, "createRoom", { name: "Timeout test" });
+    await request(guest,'updateRoomSettings',{code:fresh.code,categoryIds:['legacy'],scoringMode:1});
     const first = nextEvent(guest, "question");
     guest.emit("startGame", { code: fresh.code });
-    assert.equal((await first).number, 1);
+    const firstData=await first;
+    assert.equal(firstData.number, 1);
     const closed = await nextEvent(guest, "questionClosed", () => true, 23000);
-    assert.equal(closed.correctIndex, 1);
+    assert.equal(closed.correctIndex, defaults.find(q=>q.question===firstData.question).correct);
     let lateResult = false;
     guest.on("answerResult", () => { lateResult = true; });
     guest.emit("submitAnswer", { code: fresh.code, questionId: 0, answerIndex: 1 });

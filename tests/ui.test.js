@@ -29,6 +29,11 @@ class Element {
         if (child.parentElement) child.parentElement.children = child.parentElement.children.filter(item => item !== child);
         child.parentElement = this; this.children.push(child); return child;
     }
+    remove() {
+        if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this);
+        this.parentElement = null;
+    }
+    close() { this.open = false; }
     getBoundingClientRect() { return { top: (this.parentElement?.children.indexOf(this) || 0) * 69 }; }
     animate() { return { cancel() {} }; }
     setAttribute(key, value) { this.attributes[key] = String(value); }
@@ -68,6 +73,7 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     document.getElementById = id => elements.get(id) || null;
     document.createElement = tag => new Element(tag);
     document.querySelector = selector => selector === 'meta[name="theme-color"]' ? meta : null;
+    document.querySelectorAll = selector => selector === 'dialog[open]' ? [...elements.values()].filter(element => element.tagName === 'dialog' && element.open) : [];
     const window = new Element("window");
     const system = new Element("media");
     system.matches = dark;
@@ -79,9 +85,16 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
         setItem: (key, value) => { if (blockedStorage) throw Error("Storage blocked"); store.set(key, value); }
     };
     const socket = {
-        id: "host", connected: true, events: {}, sent: [],
+        id: "host", connected: true, events: {}, sent: [], replies: {}, pending: [], defer: false,
         on(event, callback) { this.events[event] = callback; },
         emit(event, data, callback) { this.sent.push({ event, data }); if (callback) callback({ ok: true, code: "ABCDE" }); },
+        timeout() {
+            return { emit: (event, data, callback) => {
+                this.sent.push({ event, data });
+                if (this.defer) this.pending.push(callback);
+                else callback(null, this.replies[event] || { ok: true });
+            } };
+        },
         receive(event, data) { return this.events[event]?.(data); }
     };
     const intervals = new Map();
@@ -307,4 +320,121 @@ test("another player wins: lock every choice without showing a false timeout", (
     assert.equal(ui.el("timer").textContent, "20");
     assert.equal(ui.el("answer-message").textContent, "حسم علي السؤال.");
     assert.equal(ui.intervals.size, 0);
+});
+
+const categoryLobby = (overrides = {}) => ({
+    code: "ABCDE", hostId: "host", players: [{ id: "host", name: "أحمد" }], phase: "lobby",
+    categories: [
+        { id: "science", name: "علوم", image: "/images/categories/science.svg", count: 12 },
+        { id: "history", name: "تاريخ", image: "/images/categories/history.svg", count: 9 }
+    ],
+    selectedCategoryIds: [], scoringMode: 1, ...overrides
+});
+
+test("category cards and scoring update only from server snapshots, support multiselect and removal", async () => {
+    const ui = setup();
+    ui.socket.receive("lobbyUpdate", categoryLobby());
+    const cards = ui.el("category-cards").children;
+    assert.equal(cards.length, 2);
+    assert.equal(cards[0].children[2].textContent, "علوم");
+    assert.equal(cards[0].getAttribute("aria-pressed"), "false");
+    assert.equal(ui.el("start-button").disabled, true);
+    await cards[0].click();
+    const first = ui.socket.sent.at(-1);
+    assert.equal(first.event, "updateRoomSettings");
+    assert.deepEqual(Array.from(first.data.categoryIds), ["science"]);
+    assert.equal(cards[0].getAttribute("aria-pressed"), "false", "Do not show unconfirmed settings");
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"] }));
+    assert.equal(cards[0].getAttribute("aria-pressed"), "true");
+    assert.equal(cards[0].children[1].textContent, "✓");
+    assert.equal(ui.el("start-button").disabled, false);
+    await cards[1].click();
+    assert.deepEqual(Array.from(ui.socket.sent.at(-1).data.categoryIds), ["science", "history"]);
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], scoringMode: 3 }));
+    assert.match(ui.el("category-count").textContent, /21 سؤالًا/);
+    assert.equal(ui.el("scoring-mode").value, "3");
+    assert.match(ui.el("scoring-description").textContent, /نقطتين/);
+    await ui.el("scoring-mode").fire("change", { target: { value: "4" } });
+    assert.equal(ui.socket.sent.at(-1).data.scoringMode, 4);
+    await cards[0].click();
+    assert.deepEqual(Array.from(ui.socket.sent.at(-1).data.categoryIds), ["history"]);
+    ui.socket.receive("lobbyUpdate", categoryLobby({ categories: [{ id: "history", name: "التاريخ الحديث", image: "/updated.webp", count: 20 }], selectedCategoryIds: ["history"] }));
+    assert.equal(ui.el("category-cards").children.length, 1);
+    assert.equal(ui.el("category-cards").children[0].children[2].textContent, "التاريخ الحديث");
+    assert.equal(ui.el("category-cards").children[0].children[0].src, "/updated.webp");
+});
+
+test("guests see selected categories and scoring but cannot submit settings, even from a forced click", async () => {
+    const ui = setup();
+    ui.socket.receive("lobbyUpdate", categoryLobby({ hostId: "other", selectedCategoryIds: ["history"], scoringMode: 4 }));
+    const cards = ui.el("category-cards").children;
+    assert.ok(cards.every(card => card.disabled));
+    assert.equal(cards[1].children[1].textContent, "✓");
+    assert.equal(ui.el("scoring-mode").disabled, true);
+    assert.equal(ui.el("scoring-mode").value, "4");
+    await cards[0].fire("click");
+    await ui.el("scoring-mode").fire("change", { target: { value: "1" } });
+    assert.equal(ui.socket.sent.length, 0);
+    assert.match(ui.el("category-hint").textContent, /المضيف/);
+});
+
+test("settings prevent overlapping requests and recover from server rejection; start errors stay visible", async () => {
+    const ui = setup();
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"] }));
+    ui.socket.defer = true;
+    const cards = ui.el("category-cards").children;
+    await cards[1].click();
+    assert.ok(cards.every(card => card.disabled));
+    assert.equal(ui.el("scoring-mode").disabled, true);
+    assert.equal(ui.el("start-button").disabled, true);
+    await cards[0].fire("click");
+    assert.equal(ui.socket.sent.length, 1);
+    ui.socket.pending.shift()(null, { ok: false, message: "الإعدادات متاحة للمضيف فقط." });
+    assert.match(ui.el("lobby-error").textContent, /للمضيف/);
+    assert.ok(cards.every(card => !card.disabled));
+    assert.equal(ui.el("start-button").disabled, false);
+    ui.socket.defer = false;
+    ui.socket.replies.startGame = { ok: false, message: "لا توجد أسئلة كافية في التصنيفات المختارة." };
+    await ui.el("start-button").click();
+    assert.match(ui.el("lobby-error").textContent, /أسئلة كافية/);
+    assert.ok(ui.el("game-screen").classList.contains("hidden"));
+});
+
+test("logo returns home after acknowledged lobby exit and never leaves an active match", async () => {
+    const ui = setup();
+    ui.el("name-input").value = "أحمد";
+    await ui.el("play-button").click();
+    await ui.el("create-button").click();
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"] }));
+    ui.socket.defer = true;
+    await ui.el("home-logo").click();
+    assert.equal(ui.socket.sent.at(-1).event, "leaveRoom");
+    assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
+    ui.socket.pending.shift()(null, { ok: false, message: "تعذر المغادرة." });
+    assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
+    await ui.el("home-logo").click();
+    ui.el("developer-dialog").open = true;
+    ui.socket.pending.shift()(null, { ok: true });
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+    assert.equal(ui.el("developer-dialog").open, false);
+    ui.socket.defer = false;
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"] }));
+    ui.socket.receive("question", { questionId: 0, round: 1, rounds: 2, number: 1, total: 10, question: "سؤال", choices: ["أ", "ب"], duration: 20 });
+    const sent = ui.socket.sent.length;
+    assert.equal(ui.el("home-logo").disabled, true);
+    await ui.el("home-logo").fire("click");
+    vm.runInContext("returnHome()", ui.context);
+    assert.equal(ui.socket.sent.length, sent);
+    assert.equal(ui.el("game-screen").classList.contains("hidden"), false);
+    ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: true, reason: "quota", winners: [{ id: "host", awardedPoints: 2 }] });
+    assert.equal(ui.el("answer-message").textContent, "إجابة صحيحة! +2 نقطة");
+    assert.equal(ui.el("home-logo").disabled, true);
+    ui.socket.receive("roundOver", { round: 1, ranking: [{ name: "أحمد", score: 2 }] });
+    assert.equal(ui.el("home-logo").disabled, true);
+    await ui.el("home-logo").fire("click");
+    assert.equal(ui.socket.sent.length, sent);
+    ui.socket.receive("gameOver", { ranking: [{ name: "أحمد", score: 2 }] });
+    assert.equal(ui.el("home-logo").disabled, false);
+    await ui.el("home-logo").click();
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
 });

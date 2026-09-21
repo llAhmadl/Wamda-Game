@@ -16,7 +16,7 @@
     const message = text => { el('developer-message').textContent = text; };
     function request(event, payload = {}) {
         return new Promise((resolve, reject) => {
-            if (!socket.connected) return reject(Error('الاتصال غير متاح. حاول بعد عودة الاتصال.'));
+            if (!socket.connected || !connectionReady) return reject(Error('الاتصال غير متاح. حاول بعد عودة الاتصال.'));
             socket.timeout(12000).emit(event, payload, (error, response) => {
                 if (error) return reject(Error('تأخر رد الخادم. حدّث القائمة قبل إعادة المحاولة.'));
                 if (!response?.ok) {

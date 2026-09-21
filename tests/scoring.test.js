@@ -13,7 +13,7 @@ test('first 3/4 races, wrong and repeated answers, authorization, live catalog, 
  const proc=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env:{...process.env,PORT:'0',ADMIN_CODE:'only-tests',DATABASE_URL:'',RENDER:'',BANKS_FILE:path.join(dir,'banks.json')},stdio:['ignore','pipe','pipe']});
  const clients=[];t.after(async()=>{clients.forEach(s=>s.disconnect());proc.kill();await rm(dir,{recursive:true,force:true});});
  const url=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('start timeout')),5000);proc.stdout.on('data',d=>{const m=String(d).match(/http:\/\/localhost:\d+/);if(m){clearTimeout(timer);resolve(m[0])}});});
- async function connect(){const s=io(url,{transports:['websocket'],autoConnect:false,reconnection:false});clients.push(s);const ready=event(s,'connect');s.connect();await ready;return s;}
+ async function connect(){const s=io(url,{transports:['websocket'],autoConnect:false,reconnection:false});clients.push(s);const ready=event(s,'sessionState');s.connect();s.playerId=(await ready).session.playerId;return s;}
  const admin=await connect();
  const unauth=await connect();
  assert.equal((await request(unauth,'adminUploadCategoryImage',{data:Buffer.from('fake'),type:'image/png'})).unauthorized,true);
@@ -43,7 +43,7 @@ test('first 3/4 races, wrong and repeated answers, authorization, live catalog, 
    assert.equal((await request(admin,'adminUploadCategoryImage',{data:Buffer.from('<script>'),type:'image/png'})).ok,false);
   }
   let next=event(host,'question');assert.equal((await request(host,'startGame',{code:room})).ok,true);
-  const totals=new Map(players.map(p=>[p.id,0]));const seen=new Set();
+  const totals=new Map(players.map(p=>[p.playerId,0]));const seen=new Set();
   for(let index=0;index<20;index++){
    const q=await next;assert.ok(!seen.has(q.question));seen.add(q.question);
    assert.equal(q.round,Math.floor(index/10)+1);assert.equal(q.number,index%10+1);
@@ -54,22 +54,22 @@ test('first 3/4 races, wrong and repeated answers, authorization, live catalog, 
     assert.equal((await request(unauth,'joinRoom',{name:'تحديث الصفحة',code:room})).ok,false);
    }
    const closed=event(host,'questionClosed');
-   const wrong=event(host,'answerResult');host.emit('submitAnswer',{code:room,questionId:index,answerIndex:(answer+1)%4,points:999});assert.equal((await wrong).awardedPoints,0);
-   host.emit('submitAnswer',{code:room,questionId:index,answerIndex:answer});
-   const first=event(players[1],'answerResult');players[1].emit('submitAnswer',{code:room,questionId:index,answerIndex:answer,points:999});
+   const wrong=event(host,'answerResult');host.emit('submitAnswer',{code:room,gameId:q.gameId,questionId:index,answerIndex:(answer+1)%4,points:999});assert.equal((await wrong).awardedPoints,0);
+   host.emit('submitAnswer',{code:room,gameId:q.gameId,questionId:index,answerIndex:answer});
+   const first=event(players[1],'answerResult');players[1].emit('submitAnswer',{code:room,gameId:q.gameId,questionId:index,answerIndex:answer,points:999});
    const result=await first;assert.equal(result.awardedPoints,2);assert.equal(result.rank,1);
-   players[1].emit('submitAnswer',{code:room,questionId:index,answerIndex:answer});
-   for(const p of players.slice(2))p.emit('submitAnswer',{code:room,questionId:index,answerIndex:answer});
-   const end=await closed;assert.equal(end.winners.length,mode);assert.equal(end.winners[0].id,players[1].id);
+   players[1].emit('submitAnswer',{code:room,gameId:q.gameId,questionId:index,answerIndex:answer});
+   for(const p of players.slice(2))p.emit('submitAnswer',{code:room,gameId:q.gameId,questionId:index,answerIndex:answer});
+   const end=await closed;assert.equal(end.winners.length,mode);assert.equal(end.winners[0].id,players[1].playerId);
    assert.equal(new Set(end.winners.map(p=>p.id)).size,mode);
    assert.deepEqual(end.winners.map(p=>p.awardedPoints),[2,...Array(mode-1).fill(1)]);
    end.winners.forEach(p=>totals.set(p.id,totals.get(p.id)+p.awardedPoints));
    if(index===9||index===19){
-    const resultEvent=event(host,index===19?'gameOver':'roundOver');host.emit('nextQuestion',{code:room,questionId:index});
+    const resultEvent=event(host,index===19?'gameOver':'roundOver');host.emit('nextQuestion',{code:room,gameId:q.gameId,questionId:index});
     const ranking=await resultEvent;ranking.ranking.forEach(p=>assert.equal(p.score,totals.get(p.id)));
     assert.equal(ranking.ranking.reduce((n,p)=>n+p.score,0),(index+1)*(mode+1));
-    if(index===9){assert.equal((await request(host,'leaveRoom')).ok,false);next=event(host,'question');host.emit('nextRound',{code:room,round:1});}
-   }else{next=event(host,'question');host.emit('nextQuestion',{code:room,questionId:index});}
+    if(index===9){assert.equal((await request(host,'leaveRoom')).ok,false);next=event(host,'question');host.emit('nextRound',{code:room,gameId:q.gameId,round:1});}
+   }else{next=event(host,'question');host.emit('nextQuestion',{code:room,gameId:q.gameId,questionId:index});}
   }
   assert.equal((await request(host,'leaveRoom')).ok,true);
   players.forEach(p=>p.disconnect());

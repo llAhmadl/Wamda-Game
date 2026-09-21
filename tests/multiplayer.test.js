@@ -62,9 +62,9 @@ test("two real clients: all questions, scores, host transfer and question timeou
     async function connect() {
         const socket = io(baseUrl, { transports: ["websocket"], autoConnect: false, reconnection: false });
         clients.push(socket);
-        const ready = nextEvent(socket, "connect");
+        const ready = nextEvent(socket, "sessionState");
         socket.connect();
-        await ready;
+        socket.playerId = (await ready).session.playerId;
         return socket;
     }
 
@@ -89,7 +89,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
     host.emit("startGame", { code: created.code });
     const defaults=require('../lib/default-questions.json');
     let finish;
-    const scoresExpected = new Map([[host.id, 0], [guest.id, 0]]);
+    const scoresExpected = new Map([[host.playerId, 0], [guest.playerId, 0]]);
     for (let round = 0; round < 20; round++) {
         const [a, b] = await questions;
         const correct=defaults.find(q=>q.question===a.question).correct;
@@ -111,15 +111,15 @@ test("two real clients: all questions, scores, host transfer and question timeou
         const closed = Promise.all([nextEvent(host, "questionClosed"), nextEvent(guest, "questionClosed")]);
         if (round === 0) {
             const wrong = nextEvent(guest, "answerResult");
-            guest.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: (correct + 1) % 4 });
+            guest.emit("submitAnswer", { code: created.code, gameId: a.gameId, questionId: round, answerIndex: (correct + 1) % 4 });
             assert.equal((await wrong).correct, false, "A wrong answer must not award a point or end the question");
         }
         // Both clients race with a correct answer. The server must choose exactly one.
         const first = round === 1 ? guest : host;
         const second = round === 1 ? host : guest;
-        first.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: correct });
-        second.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: correct });
-        first.emit("submitAnswer", { code: created.code, questionId: round, answerIndex: correct });
+        first.emit("submitAnswer", { code: created.code, gameId: a.gameId, questionId: round, answerIndex: correct });
+        second.emit("submitAnswer", { code: created.code, gameId: a.gameId, questionId: round, answerIndex: correct });
+        first.emit("submitAnswer", { code: created.code, gameId: a.gameId, questionId: round, answerIndex: correct });
         const [hostClosed, guestClosed] = await closed;
         assert.deepEqual(hostClosed, guestClosed);
         assert.equal(hostClosed.reason, "winner");
@@ -129,7 +129,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
         let autoAdvanced = false;
         const onQuestion = () => { autoAdvanced = true; };
         host.on("question", onQuestion);
-        guest.emit("nextQuestion", { code: created.code, questionId: round });
+        guest.emit("nextQuestion", { code: created.code, gameId: a.gameId, questionId: round });
         await new Promise(resolve => setTimeout(resolve, round === 0 ? 1100 : 10));
         host.off("question", onQuestion);
         assert.equal(autoAdvanced, false, "No automatic or guest-controlled advancement");
@@ -137,18 +137,18 @@ test("two real clients: all questions, scores, host transfer and question timeou
             finish = Promise.all([nextEvent(host, "gameOver"), nextEvent(guest, "gameOver")]);
         } else if ((round + 1) % 10 === 0) {
             const results = nextEvent(host, "roundOver");
-            host.emit("nextQuestion", { code: created.code, questionId: round });
+            host.emit("nextQuestion", { code: created.code, gameId: a.gameId, questionId: round });
             const scores = await results;
             assert.equal(scores.round, (round + 1) / 10);
             assert.equal(scores.ranking.reduce((sum, p) => sum + p.score, 0), round + 1);
             scores.ranking.forEach(p => assert.equal(p.score, scoresExpected.get(p.id)));
             questions = Promise.all([nextEvent(host, "question"), nextEvent(guest, "question")]);
-            host.emit("nextRound", { code: created.code, round: scores.round });
+            host.emit("nextRound", { code: created.code, gameId: a.gameId, round: scores.round });
             continue;
         } else {
             questions = Promise.all([nextEvent(host, "question"), nextEvent(guest, "question")]);
         }
-        host.emit("nextQuestion", { code: created.code, questionId: round });
+        host.emit("nextQuestion", { code: created.code, gameId: a.gameId, questionId: round });
 
     }
 
@@ -156,7 +156,8 @@ test("two real clients: all questions, scores, host transfer and question timeou
     assert.deepEqual(hostEnd, guestEnd);
     assert.equal(hostEnd.ranking.reduce((sum, player) => sum + player.score, 0), 20);
     hostEnd.ranking.forEach(player => assert.equal(player.score, scoresExpected.get(player.id)));
-    const promoted = nextEvent(guest, "lobbyUpdate", data => data.hostId === guest.id);
+    const promoted = nextEvent(guest, "lobbyUpdate", data => data.hostId === guest.playerId);
+    await request(host, "leaveRoom", {});
     host.disconnect();
     assert.equal((await promoted).players.length, 1);
 
@@ -171,11 +172,11 @@ test("two real clients: all questions, scores, host transfer and question timeou
     assert.equal(closed.correctIndex, defaults.find(q=>q.question===firstData.question).correct);
     let lateResult = false;
     guest.on("answerResult", () => { lateResult = true; });
-    guest.emit("submitAnswer", { code: fresh.code, questionId: 0, answerIndex: 1 });
+    guest.emit("submitAnswer", { code: fresh.code, gameId: firstData.gameId, questionId: 0, answerIndex: 1 });
     await new Promise(resolve => setTimeout(resolve, 50));
     assert.equal(lateResult, false);
     const second = nextEvent(guest, "question");
-    guest.emit("nextQuestion", { code: fresh.code, questionId: 0 });
+    guest.emit("nextQuestion", { code: fresh.code, gameId: firstData.gameId, questionId: 0 });
     assert.equal((await second).number, 2);
     guest.emit("leaveRoom");
 });

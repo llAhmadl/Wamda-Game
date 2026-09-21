@@ -29,7 +29,7 @@
     </header>
 
     <main class="container">
-        <p id="connection-message" class="connection-message hidden" role="status"></p>
+
 
         <section id="name-screen" class="screen" aria-labelledby="name-title">
             <div class="screen-heading">
@@ -260,6 +260,14 @@
             </section>
         </div>
     </dialog>
+    <div id="connection-overlay" class="connection-overlay hidden">
+        <div class="connection-card">
+            <span class="connection-loader" aria-hidden="true"></span>
+            <p id="connection-message" role="status" aria-live="polite" tabindex="-1">جاري إعادة الاتصال…</p>
+            <button id="reconnect-button" class="primary hidden" type="button">استعادة الجلسة هنا</button>
+        </div>
+    </div>
+    <p id="host-notice" class="host-notice hidden" role="status" aria-live="polite"></p>
     <noscript><p class="noscript-message">فعّل جافاسكربت للعب وَمْضة.</p></noscript>
     <script src="/socket.io/socket.io.js"></script>
     <script src="name-validation.js"></script>

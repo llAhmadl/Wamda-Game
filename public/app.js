@@ -1,4 +1,17 @@
-const socket = io();
+const SESSION_KEY = "wamda-session-v1";
+let savedSession = null;
+try { savedSession = JSON.parse(localStorage.getItem(SESSION_KEY)); } catch { /* Storage can be unavailable. */ }
+if (!savedSession || typeof savedSession.playerId !== "string" || typeof savedSession.reconnectToken !== "string") savedSession = null;
+const socket = io({ auth: savedSession || {} });
+let playerId = savedSession?.playerId || null;
+let gameId = null;
+let connectionReady = false;
+let connectionEpoch = 0;
+let overlayDelay = null;
+let longDelay = null;
+let syncRetry = null;
+let replaced = false;
+let previousFocus = null;
 
 // -------------------------
 // State
@@ -117,8 +130,8 @@ function updateControls() {
     document.getElementById("advance-message").textContent = phase === "review" ? (amHost ? "انتقل عندما يكون الجميع جاهزًا." : "بانتظار المضيف للمتابعة...") : "";
     document.getElementById("round-message").textContent = phase === "roundResults" ? (amHost ? "ابدأ الجولة التالية عندما يكون الجميع جاهزًا." : "بانتظار المضيف لبدء الجولة التالية...") : "";
 }
-nextQuestionButton.addEventListener("click", () => socket.emit("nextQuestion", { code: currentRoom, questionId }));
-nextRoundButton.addEventListener("click", () => socket.emit("nextRound", { code: currentRoom, round: currentRound }));
+nextQuestionButton.addEventListener("click", () => { if (isConnected()) socket.emit("nextQuestion", { code: currentRoom, gameId, questionId }); });
+nextRoundButton.addEventListener("click", () => { if (isConnected()) socket.emit("nextRound", { code: currentRoom, gameId, round: currentRound }); });
 
 const resultsList =
     document.getElementById("results-list");
@@ -131,36 +144,143 @@ const nameField = createNameField(nameInput, document.getElementById("name-label
 const playerCount = document.getElementById("player-count");
 const copyCodeButton = document.getElementById("copy-code");
 const copyMessage = document.getElementById("copy-message");
+const connectionOverlay = document.getElementById("connection-overlay");
 const connectionMessage = document.getElementById("connection-message");
+const reconnectButton = document.getElementById("reconnect-button");
 
-// A reconnect creates a new socket; the original server does not restore rooms.
-socket.on("disconnect", () => {
-    connectionMessage.textContent = "انقطع الاتصال. جارٍ إعادة الاتصال...";
-    connectionMessage.classList.remove("hidden");
+function lockPage(locked) {
+    for (const element of document.querySelectorAll("body > header, body > main, body > dialog")) element.inert = locked;
+}
+function beginRecovery() {
+    connectionReady = false;
     clearInterval(countdown);
-    if (currentRoom) {
-        currentRoom = "";
-        phase = "lobby";
-        settingsPending = false;
-        updateControls();
-        showScreen("home");
-        homeError.textContent = "أنشئ غرفة أو انضم مجددًا بعد عودة الاتصال.";
+    if (overlayDelay !== null) return;
+    overlayDelay = setTimeout(() => {
+        previousFocus = document.activeElement;
+        // An open modal lives above fixed overlays, so close it before blocking the page.
+        document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
+        document.getElementById("menu-toggle").setAttribute("aria-expanded", "false");
+        connectionMessage.textContent = "جاري إعادة الاتصال…";
+        connectionOverlay.classList.remove("hidden");
+        lockPage(true);
+        connectionMessage.focus({ preventScroll: true });
+    }, 800);
+    longDelay = setTimeout(() => {
+        if (!replaced) connectionMessage.textContent = "تعذر الاتصال، نحاول إعادتك للجلسة…";
+    }, 10000);
+}
+function finishRecovery() {
+    clearTimeout(overlayDelay); clearTimeout(longDelay); clearTimeout(syncRetry);
+    overlayDelay = longDelay = syncRetry = null;
+    connectionReady = true;
+    connectionOverlay.classList.add("hidden");
+    reconnectButton.classList.add("hidden");
+    lockPage(false);
+    if (previousFocus?.isConnected && !previousFocus.closest("[inert], .hidden")) previousFocus.focus({ preventScroll: true });
+    else Object.values(screens).find(screen => !screen.classList.contains("hidden"))?.querySelector("h1")?.focus({ preventScroll: true });
+    previousFocus = null;
+}
+function storeSession(session) {
+    savedSession = session;
+    playerId = session?.playerId || null;
+    socket.auth = session || {};
+    try {
+        if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+        else localStorage.removeItem(SESSION_KEY);
+    } catch { /* In-memory recovery still works when storage is blocked. */ }
+}
+function applyState(data) {
+    settingsPending = false;
+    playerName = data.name || playerName;
+    playerNameText.textContent = playerName;
+    const state = data.state;
+    if (!state) {
+        currentRoom = ""; phase = "lobby"; amHost = false; gameId = null;
+        clearInterval(countdown); updateControls();
+        showScreen(playerName ? "home" : "name");
+        return;
+    }
+    renderLobby(state);
+    if (state.phase === "lobby") showScreen("lobby");
+    else if (state.phase === "question" || state.phase === "review") {
+        renderQuestion(state.question);
+        if (state.answer) {
+            const selected = choicesContainer.querySelectorAll("button")[state.answer.answerIndex];
+            selected?.classList.add("selected");
+            selected?.setAttribute("aria-pressed", "true");
+            choicesContainer.querySelectorAll("button").forEach(button => { button.disabled = true; });
+            renderAnswer(state.answer);
+        }
+        if (state.review) renderReview(state.review);
+    } else showResults(state.results, state.phase === "finished");
+}
+function synchronize() {
+    if (!socket.connected || replaced) return;
+    beginRecovery();
+    const epoch = ++connectionEpoch;
+    socket.timeout(5000).emit("syncState", {}, (error, data) => {
+        if (epoch !== connectionEpoch || !socket.connected || replaced) return;
+        if (error || !data?.ok) { syncRetry = setTimeout(synchronize, 1000); return; }
+        applyState(data);
+        finishRecovery();
+    });
+}
+socket.on("disconnect", reason => {
+    connectionEpoch++;
+    clearTimeout(syncRetry);
+    if (!replaced) beginRecovery();
+    if (reason === "io server disconnect" && !replaced) socket.connect();
+});
+socket.on("connect_error", error => {
+    beginRecovery();
+    if (error?.data?.code === "SESSION_INVALID") {
+        storeSession(null);
+        currentRoom = ""; phase = "lobby";
+        homeError.textContent = "الجلسة السابقة غير متاحة. يمكنك إنشاء غرفة أو الانضمام مجددًا.";
+        socket.connect();
     }
 });
-
-socket.on("connect_error", () => {
-    connectionMessage.textContent = "تعذر الاتصال بالخادم. تحقق من اتصالك.";
-    connectionMessage.classList.remove("hidden");
+socket.on("connect", () => { replaced = false; beginRecovery(); });
+socket.on("sessionState", data => {
+    connectionEpoch++;
+    storeSession(data.session);
+    applyState(data);
+    finishRecovery();
 });
-
-socket.on("connect", () => {
-    connectionMessage.textContent = "";
-    connectionMessage.classList.add("hidden");
-    if (playerName) socket.emit("changeName", { name: playerName }, () => {});
+socket.on("sessionReplaced", () => {
+    replaced = true; connectionReady = false; connectionEpoch++;
+    clearInterval(countdown);
+    clearTimeout(overlayDelay); clearTimeout(longDelay); clearTimeout(syncRetry);
+    overlayDelay = longDelay = syncRetry = null;
+    document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
+    document.getElementById("menu-toggle").setAttribute("aria-expanded", "false");
+    connectionOverlay.classList.remove("hidden");
+    connectionMessage.textContent = "تم فتح جلستك في اتصال آخر.";
+    reconnectButton.classList.remove("hidden");
+    lockPage(true);
+    reconnectButton.focus();
 });
-
+reconnectButton.addEventListener("click", () => {
+    replaced = false;
+    reconnectButton.classList.add("hidden");
+    connectionMessage.textContent = "جاري إعادة الاتصال…";
+    beginRecovery();
+    socket.connect();
+});
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") synchronize();
+});
+window.addEventListener("pageshow", event => { if (event.persisted) synchronize(); });
+window.addEventListener("offline", () => { if (!replaced) { connectionEpoch++; beginRecovery(); } });
+window.addEventListener("online", () => { if (socket.connected) synchronize(); else if (!replaced) socket.connect(); });
+socket.on("hostTransferred", data => {
+    const notice = document.getElementById("host-notice");
+    notice.textContent = data.message;
+    notice.classList.remove("hidden");
+    setTimeout(() => notice.classList.add("hidden"), 10000);
+});
 function isConnected() {
-    if (socket.connected) return true;
+    if (socket.connected && connectionReady) return true;
     homeError.textContent = "لم يتم الاتصال بعد. حاول بعد قليل.";
     return false;
 }
@@ -211,7 +331,7 @@ function enterHome() {
     }
 
     playerName = name;
-    if (socket.connected) socket.emit("changeName", { name }, () => {});
+    if (isConnected()) socket.emit("changeName", { name }, () => {});
 
     nameField.clear();
 
@@ -416,7 +536,7 @@ function renderLobbySettings() {
 }
 
 function changeRoomSettings(categoryIds, scoringMode) {
-    if (!amHost || isActiveGame() || settingsPending || !socket.connected) return;
+    if (!amHost || isActiveGame() || settingsPending || !socket.connected || !connectionReady) return;
     settingsPending = true;
     document.getElementById("lobby-error").textContent = "";
     renderLobbySettings();
@@ -428,9 +548,8 @@ function changeRoomSettings(categoryIds, scoringMode) {
 }
 document.getElementById("scoring-mode").addEventListener("change", event => changeRoomSettings(lobbySettings.selectedCategoryIds, Number(event.target.value)));
 
-socket.on(
-    "lobbyUpdate",
-    data => {
+function renderLobby(data) {
+        if (data.gameId !== undefined) gameId = data.gameId;
 
         currentRoom = data.code;
 
@@ -474,7 +593,8 @@ socket.on(
             playersList.appendChild(row);
         });
 
-        amHost = socket.id === data.hostId;
+        amHost = playerId === data.hostId;
+        if (!amHost) document.getElementById("host-notice").classList.add("hidden");
         if (data.phase) phase = data.phase;
         lobbySettings = { categories: data.categories || [], selectedCategoryIds: data.selectedCategoryIds || [], scoringMode: data.scoringMode || 1, availableQuestionCount: data.availableQuestionCount };
         renderLobbySettings();
@@ -498,8 +618,8 @@ socket.on(
             hostMessage.textContent =
                 "بانتظار المضيف لبدء اللعبة...";
         }
-    }
-);
+}
+socket.on("lobbyUpdate", renderLobby);
 
 // -------------------------
 // Start Game
@@ -509,12 +629,12 @@ startButton.addEventListener(
     "click",
     () => {
 
-        if (!amHost || !socket.connected) return;
+        if (!amHost || !socket.connected || !connectionReady) return;
         document.getElementById("lobby-error").textContent = "";
         socket.timeout(10000).emit(
             "startGame",
             {
-                code: currentRoom
+                code: currentRoom, gameId
             },
             (error, response) => {
                 if (error || !response?.ok) document.getElementById("lobby-error").textContent = response?.message || "تعذر بدء المباراة. حاول مجددًا.";
@@ -527,9 +647,8 @@ startButton.addEventListener(
 // Question
 // -------------------------
 
-socket.on(
-    "question",
-    data => {
+function renderQuestion(data) {
+        gameId = data.gameId;
 
         phase = "question";
         questionId = data.questionId;
@@ -591,9 +710,9 @@ socket.on(
             }
         );
 
-        startTimer(data.duration);
-    }
-);
+        startTimer(data);
+}
+socket.on("question", renderQuestion);
 
 // -------------------------
 // Answer
@@ -604,7 +723,7 @@ function submitAnswer(
     selectedButton
 ) {
 
-    if (selectedButton.disabled) return;
+    if (selectedButton.disabled || !isConnected() || phase !== "question") return;
 
     const buttons =
         choicesContainer.querySelectorAll(
@@ -623,14 +742,12 @@ function submitAnswer(
         "submitAnswer",
         {
             code: currentRoom,
-            answerIndex, questionId
+            answerIndex, questionId, gameId
         }
     );
 }
 
-socket.on(
-    "answerResult",
-    data => {
+function renderAnswer(data) {
 
         const correctButton = choicesContainer.querySelectorAll("button")[data.correctIndex];
         if (correctButton) correctButton.classList.add("is-correct");
@@ -644,12 +761,12 @@ socket.on(
         if (correctButton) correctButton.setAttribute("aria-label", `${correctButton.textContent}، الإجابة الصحيحة`);
         if (selected && !data.correct) selected.setAttribute("aria-label", `${selected.textContent}، إجابتك خاطئة`);
 
-    }
-);
+}
+socket.on("answerResult", renderAnswer);
 
 // -------------------------
 // Question review: wait for an explicit host action.
-socket.on("questionClosed", data => {
+function renderReview(data) {
     clearInterval(countdown);
     phase = "review";
     lastInRound = data.lastInRound;
@@ -663,61 +780,40 @@ socket.on("questionClosed", data => {
         if (index !== data.correctIndex) selected.classList.add("is-wrong");
     }
     if (data.winners?.length) {
-        const earned = data.winners.find(winner => winner.id === socket.id);
+        const earned = data.winners.find(winner => winner.id === playerId);
         answerMessage.textContent = earned ? `إجابة صحيحة! +${earned.awardedPoints} نقطة` : `أجاب ${data.winners.length} من اللاعبين بشكل صحيح.`;
     } else if (data.winner) {
-        answerMessage.textContent = data.winner.id === socket.id ? "سبقت الجميع! +1 نقطة" : `حسم ${data.winner.name} السؤال.`;
+        answerMessage.textContent = data.winner.id === playerId ? "سبقت الجميع! +1 نقطة" : `حسم ${data.winner.name} السؤال.`;
     } else if (data.reason === "timeout" || !data.reason) {
         timerElement.textContent = "0";
         answerMessage.textContent = "انتهى الوقت.";
     }
     updateControls();
-});
+}
+socket.on("questionClosed", renderReview);
 
 // -------------------------
 // Timer
 // -------------------------
 
-function startTimer(seconds) {
-
+function startTimer(data) {
     clearInterval(countdown);
-
-    let remaining = seconds;
-
-    timerElement.parentElement.dataset.low = "false";
-
-    timerElement.textContent =
-        remaining;
-
-    countdown = setInterval(
-        () => {
-
-            remaining--;
-
-            if (remaining < 0) {
-
-                clearInterval(countdown);
-
-                return;
-            }
-
-            timerElement.textContent =
-                remaining;
-
-            timerElement.parentElement.dataset.low = String(remaining <= 5);
-
-            if (remaining === 0) {
-                clearInterval(countdown);
-                const unanswered = !choicesContainer.querySelector(".selected");
-                choicesContainer.querySelectorAll("button").forEach(button => {
-                    button.disabled = true;
-                });
-                if (unanswered) answerMessage.textContent = "انتهى الوقت. بانتظار المضيف للمتابعة.";
-            }
-
-        },
-        1000
-    );
+    // Derive from the server deadline and advance against a monotonic clock.
+    // Background-tab throttling cannot turn delayed ticks into extra seconds.
+    const remainingMs = Math.max(0, data.deadline - data.serverNow);
+    const endsAt = performance.now() + remainingMs;
+    function paint() {
+        const remaining = Math.max(0, Math.ceil((endsAt - performance.now()) / 1000));
+        timerElement.textContent = remaining;
+        timerElement.parentElement.dataset.low = String(remaining <= 5);
+        if (remaining === 0) {
+            clearInterval(countdown);
+            choicesContainer.querySelectorAll("button").forEach(button => { button.disabled = true; });
+            if (!choicesContainer.querySelector(".selected")) answerMessage.textContent = "انتهى الوقت. بانتظار المضيف للمتابعة.";
+        }
+    }
+    countdown = setInterval(paint, 200);
+    paint();
 }
 
 // -------------------------
@@ -832,6 +928,7 @@ function returnHome() {
     if (isActiveGame()) return;
     const finish = () => {
         currentRoom = "";
+        gameId = null;
         phase = "lobby";
         settingsPending = false;
         roomCodeInput.value = "";
@@ -842,7 +939,7 @@ function returnHome() {
         showScreen(playerName ? "home" : "name");
     };
     if (!currentRoom) { finish(); return; }
-    if (!socket.connected) return;
+    if (!socket.connected || !connectionReady) return;
     socket.timeout(10000).emit("leaveRoom", {}, (error, response) => {
         if (!error && response?.ok) finish();
         else document.getElementById("lobby-error").textContent = response?.message || "تعذر مغادرة الغرفة. حاول مجددًا.";

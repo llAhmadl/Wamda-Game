@@ -50,7 +50,7 @@ class Element {
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
 }
 
-function setup({ saved = null, dark = false, blockedStorage = false, clipboardFails = false, reducedMotion = false } = {}) {
+function setup({ saved = null, dark = false, blockedStorage = false, clipboardFails = false, reducedMotion = false, session = null } = {}) {
     const elements = new Map();
     for (const match of html.matchAll(/<([\w-]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
         const element = new Element(match[1]);
@@ -73,19 +73,23 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     document.getElementById = id => elements.get(id) || null;
     document.createElement = tag => new Element(tag);
     document.querySelector = selector => selector === 'meta[name="theme-color"]' ? meta : null;
-    document.querySelectorAll = selector => selector === 'dialog[open]' ? [...elements.values()].filter(element => element.tagName === 'dialog' && element.open) : [];
+    const pageRegions = [new Element("header"), new Element("main"), el("developer-dialog")];
+    document.querySelectorAll = selector => selector === "body > header, body > main, body > dialog" ? pageRegions : selector === 'dialog[open]' ? [...elements.values()].filter(element => element.tagName === 'dialog' && element.open) : [];
     const window = new Element("window");
     const system = new Element("media");
     system.matches = dark;
     window.matchMedia = query => query.includes("reduced-motion") ? { matches: reducedMotion } : system;
     window.scrollTo = () => {};
     const store = new Map(saved ? [["firsthit-theme", saved]] : []);
+    if (session) store.set("wamda-session-v1", JSON.stringify(session));
     const localStorage = {
+        removeItem: key => store.delete(key),
         getItem: key => { if (blockedStorage) throw Error("Storage blocked"); return store.get(key) ?? null; },
         setItem: (key, value) => { if (blockedStorage) throw Error("Storage blocked"); store.set(key, value); }
     };
     const socket = {
-        id: "host", connected: true, events: {}, sent: [], replies: {}, pending: [], defer: false,
+        connect() { this.connected = true; },
+        id: "transport-host", connected: true, events: {}, sent: [], replies: {}, pending: [], defer: false,
         on(event, callback) { this.events[event] = callback; },
         emit(event, data, callback) { this.sent.push({ event, data }); if (callback) callback({ ok: true, code: "ABCDE" }); },
         timeout() {
@@ -95,13 +99,21 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
                 else callback(null, this.replies[event] || { ok: true });
             } };
         },
-        receive(event, data) { return this.events[event]?.(data); }
+        receive(event, data) {
+            if (event === "question") data = { deadline: clock + data.duration * 1000, serverNow: clock, ...data };
+            return this.events[event]?.(data);
+        }
     };
+    let clock = 0;
+    const timers = new Map();
     const intervals = new Map();
     let intervalId = 0;
     let copied = "";
     const context = vm.createContext({
-        document, window, localStorage, console, io: () => socket,
+        document, window, localStorage, console, io: options => { socket.initialAuth = options.auth; return socket; },
+        performance: { now: () => clock },
+        setTimeout: (callback, ms) => { timers.set(++intervalId, { callback, at: clock + ms }); return intervalId; },
+        clearTimeout: id => timers.delete(id),
         navigator: { clipboard: { writeText: async value => { if (clipboardFails) throw Error("Clipboard blocked"); copied = value; } } },
         setInterval: callback => { intervals.set(++intervalId, callback); return intervalId; },
         clearInterval: id => intervals.delete(id)
@@ -109,7 +121,13 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     vm.runInContext(themeCode, context);
     vm.runInContext(nameCode, context);
     vm.runInContext(appCode, context);
-    return { el, document, window, system, store, socket, context, intervals, meta, get copied() { return copied; } };
+    socket.receive("sessionState", { session: session || { playerId: "host", reconnectToken: "test-token" }, state: null });
+    function advance(ms) {
+        clock += ms;
+        for (const [id, timer] of timers) if (timer.at <= clock) { timers.delete(id); timer.callback(); }
+        for (const callback of intervals.values()) callback();
+    }
+    return { el, document, window, system, store, socket, context, intervals, timers, advance, meta, pageRegions, get copied() { return copied; } };
 }
 
 test("light/dark toggle persists, updates its label and restores before DOM ready", async () => {
@@ -218,7 +236,7 @@ test("timer closes unanswered choices; equal scores share rank", () => {
     const ui = setup();
     ui.socket.receive("question", { number: 1, total: 5, question: "Test", choices: ["A", "B"], duration: 2 });
     const tick = [...ui.intervals.values()][0];
-    tick(); tick();
+    ui.advance(2000);
     assert.equal(ui.el("timer").textContent, "0");
     assert.ok(ui.el("choices").children.every(c => c.disabled));
     assert.match(ui.el("answer-message").textContent, /انتهى الوقت/);
@@ -237,7 +255,7 @@ test("untrusted names stay plain text and offline actions do not queue rooms", a
     ui.socket.receive("disconnect");
     await ui.el("create-button").click();
     assert.equal(ui.socket.sent.length, 0);
-    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+    assert.equal(ui.el("name-screen").classList.contains("hidden"), false, "Keep the current screen during recovery");
 });
 
 test("static UI contracts: local fonts, reduced motion, and touch-friendly sizing", () => {
@@ -437,4 +455,123 @@ test("logo returns home after acknowledged lobby exit and never leaves an active
     assert.equal(ui.el("home-logo").disabled, false);
     await ui.el("home-logo").click();
     assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+});
+
+const recoveryState = (overrides = {}) => ({
+    ...categoryLobby({ selectedCategoryIds: ["science"], phase: "question" }),
+    gameId: "match-one", question: { gameId: "match-one", questionId: 6, round: 1, number: 7,
+        choices: ["أ", "ب", "ج", "د"], question: "سؤال مستعاد", duration: 20,
+        deadline: 120000, serverNow: 113000 }, answer: null, review: null, results: null,
+    ...overrides
+});
+function restore(ui, state) {
+    ui.socket.connected = true;
+    ui.socket.receive("sessionState", { session: { playerId: "host", reconnectToken: "private-test" }, name: "أحمد", state });
+}
+
+test("brief outages stay invisible; sustained recovery locks page until server snapshot applies", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.advance(799);
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    const sent = ui.socket.sent.length;
+    await ui.el("choices").children[0].fire("click");
+    assert.equal(ui.socket.sent.length, sent);
+    restore(ui, recoveryState()); ui.advance(2);
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.el("developer-dialog").open = true;
+    ui.advance(800);
+    assert.equal(ui.el("developer-dialog").open, false);
+    assert.ok(!ui.el("connection-overlay").classList.contains("hidden"));
+    assert.ok(ui.pageRegions.every(el => el.inert));
+    assert.equal(ui.el("connection-message").textContent, "جاري إعادة الاتصال…");
+    ui.advance(9200);
+    assert.equal(ui.el("connection-message").textContent, "تعذر الاتصال، نحاول إعادتك للجلسة…");
+    ui.socket.connected = true; ui.socket.receive("connect");
+    assert.ok(!ui.el("connection-overlay").classList.contains("hidden"), "Transport readiness is not state readiness");
+    restore(ui, recoveryState());
+    assert.equal(ui.el("question-text").textContent, "سؤال مستعاد");
+    assert.equal(ui.el("timer").textContent, "7");
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    assert.ok(ui.pageRegions.every(el => !el.inert));
+    ui.advance(3500);
+    assert.equal(ui.el("timer").textContent, "4", "A throttled tick derives elapsed time, never subtracts just one second");
+});
+
+test("restored accepted answers cannot be submitted again and review/results use current state", async () => {
+    const ui = setup();
+    restore(ui, recoveryState({ answer: { answerIndex: 1, correct: false, correctIndex: 0, awardedPoints: 0 } }));
+    assert.ok(ui.el("choices").children.every(button => button.disabled));
+    assert.ok(ui.el("choices").children[1].classList.contains("selected"));
+    assert.ok(ui.el("choices").children[1].classList.contains("is-wrong"));
+    await ui.el("choices").children[1].fire("click");
+    assert.equal(ui.socket.sent.filter(x => x.event === "submitAnswer").length, 0);
+    restore(ui, recoveryState({ hostId: "guest", phase: "review", review: { correctIndex: 0, lastInRound: false, reason: "winner", winners: [{ id: "guest", awardedPoints: 2 }] } }));
+    assert.ok(ui.el("choices").children.every(button => button.disabled));
+    assert.ok(ui.el("next-question-button").classList.contains("hidden"));
+    restore(ui, recoveryState({ phase: "finished", results: { round: 2, ranking: [{ id: "host", name: "أحمد", score: 17 }] } }));
+    assert.ok(!ui.el("results-screen").classList.contains("hidden"));
+    assert.equal(ui.el("results-list").children[0].children[2].textContent, "17 نقطة");
+    assert.equal(ui.intervals.size, 0);
+});
+
+test("wake synchronization ignores an old acknowledgement and retries failed snapshots while keeping overlay", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    ui.socket.defer = true;
+    ui.document.visibilityState = "visible";
+    await ui.document.fire("visibilitychange");
+    const stale = ui.socket.pending.shift();
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.advance(800);
+    restore(ui, recoveryState({ phase: "finished", results: { round: 2, ranking: [] } }));
+    stale(null, { ok: true, state: recoveryState() });
+    assert.ok(!ui.el("results-screen").classList.contains("hidden"));
+    await ui.window.fire("pageshow", { persisted: true });
+    ui.advance(800);
+    ui.socket.pending.shift()(Error("timeout"));
+    assert.ok(!ui.el("connection-overlay").classList.contains("hidden"));
+    ui.advance(1000);
+    ui.socket.pending.shift()(null, { ok: true, state: recoveryState() });
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    assert.equal(ui.el("timer").textContent, "7");
+});
+
+test("credentials persist privately; replaced tabs require explicit reclaim and unavailable sessions return home", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    assert.equal(JSON.parse(ui.store.get("wamda-session-v1")).reconnectToken, "private-test");
+    assert.equal(ui.el("connection-message").textContent.includes("private-test"), false);
+    ui.socket.receive("sessionReplaced");
+    ui.socket.connected = false; ui.socket.receive("disconnect", "io server disconnect");
+    assert.equal(ui.socket.connected, false, "Do not automatically fight the other tab");
+    assert.ok(!ui.el("reconnect-button").classList.contains("hidden"));
+    assert.ok(ui.pageRegions.every(el => el.inert));
+    await ui.el("reconnect-button").click();
+    assert.equal(ui.socket.connected, true);
+    assert.ok(!ui.el("connection-overlay").classList.contains("hidden"));
+    restore(ui, recoveryState());
+    ui.socket.receive("connect_error", { data: { code: "SESSION_INVALID" } });
+    assert.equal(ui.store.has("wamda-session-v1"), false);
+    ui.socket.receive("sessionState", { session: { playerId: "new", reconnectToken: "new-private" }, state: null });
+    assert.ok(!ui.el("home-screen").classList.contains("hidden"));
+    assert.match(ui.el("home-error").textContent, /الجلسة السابقة غير متاحة/);
+    const reloaded = setup({ session: { playerId: "host", reconnectToken: "private-test" } });
+    assert.equal(reloaded.socket.initialAuth.playerId, "host");
+    assert.equal(reloaded.socket.initialAuth.reconnectToken, "private-test");
+    const blocked = setup({ blockedStorage: true });
+    restore(blocked, recoveryState());
+    assert.equal(blocked.socket.auth.reconnectToken, "private-test");
+});
+
+test("connection overlay uses theme colors, subtle blur and reduced motion", () => {
+    const css = fs.readFileSync(path.join(publicDir, "style.css"), "utf8");
+    const overlay = css.slice(css.indexOf(".connection-overlay {"));
+    assert.match(overlay, /var\(--background\)/);
+    assert.match(overlay, /backdrop-filter: blur\(2px\)/);
+    assert.match(overlay, /prefers-reduced-motion: reduce/);
+    assert.match(overlay, /animation: none/);
+    assert.doesNotMatch(overlay, /gradient|box-shadow|text-shadow/);
 });

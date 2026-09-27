@@ -80,7 +80,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
     assert.equal((await lobby).players.length, 2);
 
     assert.equal((await request(host,'startGame',{code:created.code})).ok,false);
-    assert.equal((await request(guest,'updateRoomSettings',{code:created.code,categoryIds:['legacy'],scoringMode:4})).ok,false);
+    assert.equal((await request(guest,'updateRoomSettings',{code:created.code,categoryIds:['legacy'],scoringMode:5})).ok,false);
     assert.equal((await request(host,'updateRoomSettings',{code:created.code,categoryIds:['islamic'],scoringMode:1})).ok,true);
     assert.equal((await request(host,'startGame',{code:created.code})).ok,false);
     await request(host,'updateRoomSettings',{code:created.code,categoryIds:['legacy'],scoringMode:1});

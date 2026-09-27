@@ -6,6 +6,8 @@ const socket = io({ auth: savedSession || {} });
 let playerId = savedSession?.playerId || null;
 let gameId = null;
 let connectionReady = false;
+let homePending = false;
+let resetNameOnSync = false;
 let connectionEpoch = 0;
 let overlayDelay = null;
 let longDelay = null;
@@ -23,6 +25,10 @@ let countdown = null;
 let amHost = false;
 let phase = "lobby";
 let questionId = null;
+let answerLimit = 1;
+let displayedWinnerCount = 0;
+let answerLeadersSignature = null;
+let answerBoardKey = null;
 let currentRound = 1;
 let lastInRound = false;
 let resultsAnimation = null;
@@ -120,7 +126,11 @@ const nextQuestionButton = document.getElementById("next-question-button");
 const nextRoundButton = document.getElementById("next-round-button");
 
 function updateControls() {
-    document.getElementById("home-logo").disabled = isActiveGame();
+    const logo = document.getElementById("home-logo");
+    logo.disabled = homePending;
+    logo.title = isActiveGame() ? "تحديث الصفحة واستعادة المباراة" : "العودة إلى صفحة الاسم";
+    logo.setAttribute("aria-label", `وَمْضة — ${logo.title}`);
+    logo.setAttribute("aria-haspopup", isActiveGame() ? "dialog" : "false");
     document.getElementById("developer-home").disabled = isActiveGame();
     nextQuestionButton.classList.add("hidden");
     nextRoundButton.classList.add("hidden");
@@ -191,9 +201,17 @@ function storeSession(session) {
 }
 function applyState(data) {
     settingsPending = false;
-    playerName = data.name || playerName;
+    const hadRegisteredName = Boolean(playerName);
+    playerName = data.name ?? playerName;
     playerNameText.textContent = playerName;
     const state = data.state;
+    // Keep an unsubmitted draft on ordinary wake/reconnect snapshots. A deliberate
+    // reset (including a lost acknowledgement) must restore an empty name field.
+    if (!state && !playerName && (hadRegisteredName || resetNameOnSync)) {
+        nameInput.value = "";
+        nameField.clear();
+    }
+    resetNameOnSync = false;
     if (!state) {
         currentRoom = ""; phase = "lobby"; amHost = false; gameId = null;
         clearInterval(countdown); updateControls();
@@ -214,15 +232,16 @@ function applyState(data) {
         if (state.review) renderReview(state.review);
     } else showResults(state.results, state.phase === "finished");
 }
-function synchronize() {
+function synchronize(afterSync) {
     if (!socket.connected || replaced) return;
     beginRecovery();
     const epoch = ++connectionEpoch;
     socket.timeout(5000).emit("syncState", {}, (error, data) => {
         if (epoch !== connectionEpoch || !socket.connected || replaced) return;
-        if (error || !data?.ok) { syncRetry = setTimeout(synchronize, 1000); return; }
+        if (error || !data?.ok) { syncRetry = setTimeout(() => synchronize(afterSync), 1000); return; }
         applyState(data);
         finishRecovery();
+        if (typeof afterSync === "function") afterSync();
     });
 }
 socket.on("disconnect", reason => {
@@ -531,7 +550,7 @@ function renderLobbySettings() {
     const scoring = document.getElementById("scoring-mode");
     scoring.value = String(lobbySettings.scoringMode);
     scoring.disabled = !editable;
-    document.getElementById("scoring-description").textContent = lobbySettings.scoringMode === 1 ? "أول إجابة صحيحة تكسب نقطة واحدة." : `الأول الصحيح يكسب نقطتين، وكل لاعب بعده نقطة حتى يكتمل ${lobbySettings.scoringMode} لاعبين.`;
+    document.getElementById("scoring-description").textContent = lobbySettings.scoringMode === 1 ? "أول إجابة صحيحة تكسب نقطة واحدة." : `أول ${lobbySettings.scoringMode} لاعبين يجيبون بشكل صحيح يكسب كل منهم نقطة واحدة.`;
     startButton.disabled = !editable || !lobbySettings.selectedCategoryIds.length;
 }
 
@@ -653,6 +672,14 @@ function renderQuestion(data) {
         phase = "question";
         questionId = data.questionId;
         currentRound = data.round;
+        answerLimit = [1, 3, 5, 7].includes(data.scoringMode) ? data.scoringMode : lobbySettings.scoringMode;
+        const boardKey = JSON.stringify([gameId, questionId, answerLimit]);
+        if (boardKey !== answerBoardKey) {
+            answerBoardKey = boardKey;
+            displayedWinnerCount = 0;
+            answerLeadersSignature = null;
+        }
+        renderAnswerLeaders(data.winners || []);
         updateControls();
         showScreen("game");
 
@@ -714,6 +741,38 @@ function renderQuestion(data) {
 }
 socket.on("question", renderQuestion);
 
+// Each update replaces the server-owned order; retries never append extra rows.
+function renderAnswerLeaders(winners) {
+    if (!Array.isArray(winners) || winners.length < displayedWinnerCount) return;
+    const accepted = winners.slice(0, answerLimit);
+    const signature = JSON.stringify([answerLimit, accepted.map(winner => [winner.id, winner.name])]);
+    if (signature === answerLeadersSignature) return;
+    answerLeadersSignature = signature;
+    displayedWinnerCount = accepted.length;
+    const list = document.getElementById("answer-leaders");
+    list.innerHTML = "";
+    for (let index = 0; index < answerLimit; index++) {
+        const winner = accepted[index];
+        const row = document.createElement("li");
+        row.className = winner ? "answer-leader is-filled" : "answer-leader";
+        const rank = document.createElement("span");
+        rank.className = "answer-rank";
+        rank.textContent = `${index + 1}.`;
+        rank.setAttribute("aria-hidden", "true");
+        const name = document.createElement("bdi");
+        name.className = "answer-player";
+        name.textContent = winner ? winner.name : "—";
+        if (!winner) row.setAttribute("aria-label", `المركز ${index + 1}، بانتظار إجابة صحيحة`);
+        row.appendChild(rank);
+        row.appendChild(name);
+        list.appendChild(row);
+    }
+}
+socket.on("answerProgress", data => {
+    if (data.gameId !== gameId || data.questionId !== questionId || !["question", "review"].includes(phase)) return;
+    renderAnswerLeaders(data.winners);
+});
+
 // -------------------------
 // Answer
 // -------------------------
@@ -770,6 +829,7 @@ function renderReview(data) {
     clearInterval(countdown);
     phase = "review";
     lastInRound = data.lastInRound;
+    renderAnswerLeaders(data.winners || (data.winner ? [data.winner] : []));
     choicesContainer.querySelectorAll("button").forEach((button, index) => {
         button.disabled = true;
         if (index === data.correctIndex) button.classList.add("is-correct");
@@ -945,5 +1005,78 @@ function returnHome() {
         else document.getElementById("lobby-error").textContent = response?.message || "تعذر مغادرة الغرفة. حاول مجددًا.";
     });
 }
+function refreshActiveGame() {
+    // Reload only when credentials will survive it. Restricted storage gets the
+    // same fresh server snapshot over the current authenticated connection.
+    let canReload = false;
+    try {
+        if (savedSession) {
+            const serialized = JSON.stringify(savedSession);
+            localStorage.setItem(SESSION_KEY, serialized);
+            canReload = localStorage.getItem(SESSION_KEY) === serialized;
+        }
+    } catch { /* Keep the live session when browser storage is unavailable. */ }
+    resetNameOnSync = false;
+    if (!canReload) { synchronize(); return; }
+    homePending = true;
+    updateControls();
+    window.location.reload();
+}
+
+const refreshDialog = document.getElementById("refresh-dialog");
+function requestGameRefresh() {
+    if (homePending || replaced || !connectionReady || !socket.connected || refreshDialog.open) return;
+    refreshDialog.showModal();
+    document.getElementById("refresh-cancel").focus();
+}
+function cancelGameRefresh() { refreshDialog.close(); }
+document.getElementById("refresh-cancel").addEventListener("click", cancelGameRefresh);
+document.getElementById("refresh-close").addEventListener("click", cancelGameRefresh);
+refreshDialog.addEventListener("cancel", event => {
+    event.preventDefault();
+    cancelGameRefresh();
+});
+document.getElementById("refresh-confirm").addEventListener("click", () => {
+    // Hidden/stale confirmation clicks must never reload after a lost connection.
+    if (!refreshDialog.open || homePending || replaced || !connectionReady || !socket.connected) return;
+    refreshDialog.close();
+    refreshActiveGame();
+});
+
 homeButton.addEventListener("click", returnHome);
-document.getElementById("home-logo").addEventListener("click", returnHome);
+document.getElementById("home-logo").addEventListener("click", () => {
+    if (homePending || replaced) return;
+    if (isActiveGame()) { requestGameRefresh(); return; }
+    if (!isConnected()) return;
+    homePending = true;
+    resetNameOnSync = true;
+    updateControls();
+    document.getElementById("site-error").textContent = "";
+    beginRecovery();
+    // Cancel outstanding wake-up snapshots before leaving the current room.
+    const epoch = ++connectionEpoch;
+    socket.timeout(10000).emit("resetSession", {}, (error, response) => {
+        homePending = false;
+        updateControls();
+        if (epoch !== connectionEpoch) return;
+        if (!error && response?.code === "GAME_ACTIVE") {
+            resetNameOnSync = false;
+            synchronize(requestGameRefresh);
+            return;
+        }
+        if (!error && response?.ok) {
+            roomCodeInput.value = "";
+            clearRoomCodeError();
+            document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
+            document.getElementById("menu-toggle").setAttribute("aria-expanded", "false");
+            document.getElementById("host-notice").classList.add("hidden");
+            applyState(response);
+            finishRecovery();
+            return;
+        }
+        document.getElementById("site-error").textContent = "تعذرت العودة لصفحة الاسم. حاول مجددًا بعد عودة الاتصال.";
+        // The departure may have reached the server even if its acknowledgement was
+        // lost. Resolve that from a fresh snapshot before enabling interaction.
+        synchronize();
+    });
+});

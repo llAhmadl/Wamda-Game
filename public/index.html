@@ -24,17 +24,17 @@
             <button id="menu-toggle" class="menu-toggle" type="button" aria-label="فتح القائمة" aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false">
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
             </button>
-            <button id="home-logo" class="brand" type="button" aria-label="وَمْضة — الرئيسية">وَمْضة</button>
+            <button id="home-logo" class="brand" type="button" aria-label="وَمْضة — العودة إلى صفحة الاسم" title="العودة إلى صفحة الاسم">وَمْضة</button>
         </div>
     </header>
 
     <main class="container">
+        <p id="site-error" class="error" role="alert"></p>
 
 
         <section id="name-screen" class="screen" aria-labelledby="name-title">
             <div class="screen-heading">
                 <h1 id="name-title" tabindex="-1">بين السؤال والجواب… <span class="title-brand">وَمْضة</span></h1>
-                <p>من غرفة صغيرة، إلى منافسة كبيرة 🏆</p>
             </div>
             <div class="name-entry">
                 <div class="panel name-card">
@@ -92,9 +92,10 @@
             <div class="panel lobby-settings">
                 <label for="scoring-mode">النقاط للإجابات الصحيحة الأسرع</label>
                 <select id="scoring-mode" aria-describedby="scoring-description">
-                    <option value="1">أول لاعب</option>
-                    <option value="3">أول 3 لاعبين</option>
-                    <option value="4">أول 4 لاعبين</option>
+                    <option value="1">أول شخص</option>
+                    <option value="3">أول 3 أشخاص</option>
+                    <option value="5">أول 5 أشخاص</option>
+                    <option value="7">أول 7 أشخاص</option>
                 </select>
                 <p id="scoring-description" class="helper-message"></p>
                 <div class="lobby-actions">
@@ -118,7 +119,11 @@
                 <p id="advance-message" class="helper-message" role="status"></p>
                 <button id="next-question-button" class="primary full-width field-action hidden" type="button">السؤال التالي</button>
             </div>
-
+            <section class="answer-board" aria-labelledby="answer-board-title">
+                <h2 id="answer-board-title">أول ناس يجاوبون</h2>
+                <p>الإجابات الصحيحة · نقطة لكل لاعب</p>
+                <ol id="answer-leaders" aria-live="polite" aria-atomic="true"></ol>
+            </section>
         </section>
 
         <section id="results-screen" class="screen hidden" aria-labelledby="results-title">
@@ -162,6 +167,18 @@
                 <span>وضع المطور</span>
             </button>
         </nav>
+    </dialog>
+
+    <dialog id="refresh-dialog" class="settings-dialog refresh-dialog" aria-labelledby="refresh-title" aria-describedby="refresh-description">
+        <div class="dialog-heading">
+            <h2 id="refresh-title">تحديث الصفحة؟</h2>
+            <button id="refresh-close" class="dialog-close" type="button" aria-label="إكمال اللعب">×</button>
+        </div>
+        <p id="refresh-description">هل أنت متأكد من تحديث الصفحة؟ ستعود لنفس المباراة باسمك ونقاطك. وقت السؤال يستمر أثناء التحديث.</p>
+        <div class="refresh-actions">
+            <button id="refresh-cancel" class="primary" type="button" autofocus>إكمال اللعب</button>
+            <button id="refresh-confirm" class="secondary" type="button">تحديث الصفحة</button>
+        </div>
     </dialog>
 
     <dialog id="rules-dialog" class="settings-dialog" aria-labelledby="rules-title">

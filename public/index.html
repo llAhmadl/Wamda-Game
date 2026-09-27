@@ -7,10 +7,10 @@
     <meta name="color-scheme" content="light dark">
     <title>وَمْضة</title>
     <link rel="icon" type="image/png" href="/favicon.png">
-    <script src="theme.js"></script>
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="categories.css">
-    <link rel="stylesheet" href="categories-admin.css">
+    <script src="/theme.js"></script>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/categories.css">
+    <link rel="stylesheet" href="/categories-admin.css">
 </head>
 <body>
     <div class="ambient-background" aria-hidden="true">
@@ -28,7 +28,7 @@
         </div>
     </header>
 
-    <main class="container">
+    <main id="game-main" class="container">
         <p id="site-error" class="error" role="alert"></p>
 
 
@@ -141,6 +141,84 @@
         </section>
     </main>
 
+    <main id="developer-page" class="developer-page hidden" aria-labelledby="developer-title">
+        <header class="developer-heading">
+            <div><p class="admin-eyebrow">مساحة الإدارة</p><h1 id="developer-title" tabindex="-1">وضع المطور</h1><p>كل ما تحتاجه لتجهيز التحدي، في مكان واحد.</p></div>
+            <button id="developer-home" class="secondary compact-button" type="button">العودة للعبة <span aria-hidden="true">←</span></button>
+        </header>
+        <p id="developer-message" class="admin-message" role="status" aria-live="polite"></p>
+        <form id="developer-login" class="admin-card developer-login">
+            <div class="admin-login-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></svg></div>
+            <h2>أهلًا بك في لوحة المطور</h2><p class="helper-message">سجّل الدخول لإدارة الأسئلة والتصنيفات ومتابعة الغرف.</p>
+            <label for="developer-code">كود المطور</label><input id="developer-code" type="password" maxlength="256" required autocomplete="current-password" aria-describedby="developer-message">
+            <button id="developer-login-submit" class="primary full-width field-action" type="submit">دخول لوحة المطور</button>
+        </form>
+        <div id="developer-content" class="hidden">
+            <div class="admin-toolbar">
+                <nav class="admin-tabs" aria-label="أقسام لوحة المطور" role="tablist">
+                    <button id="admin-tab-overview" type="button" role="tab" aria-selected="true" aria-controls="admin-overview" data-admin-tab="overview">نظرة عامة</button>
+                    <button id="admin-tab-questions" type="button" role="tab" aria-selected="false" aria-controls="admin-questions" tabindex="-1" data-admin-tab="questions">الأسئلة</button>
+                    <button id="admin-tab-categories" type="button" role="tab" aria-selected="false" aria-controls="admin-categories" tabindex="-1" data-admin-tab="categories">التصنيفات</button>
+                    <button id="admin-tab-banks" type="button" role="tab" aria-selected="false" aria-controls="admin-banks" tabindex="-1" data-admin-tab="banks">البنوك</button>
+                </nav>
+                <div class="admin-actions"><button id="admin-refresh" class="secondary compact-button" type="button">تحديث البيانات</button><button id="admin-logout" class="text-button" type="button">تسجيل الخروج</button></div>
+            </div>
+            <section id="admin-bank-context" class="admin-card admin-bank-context hidden" aria-label="البنك المحدد">
+                <div><label for="bank-select">بنك الأسئلة</label><select id="bank-select"></select></div>
+                <p id="bank-status" class="helper-message"></p>
+            </section>
+            <section id="admin-overview" class="admin-tab-panel" role="tabpanel" aria-labelledby="admin-tab-overview">
+                <div class="admin-metrics">
+                    <article class="admin-metric"><span>اللاعبون الآن</span><strong id="admin-players-count">0</strong><p>اللاعبون المسجّلون المتصلون</p></article>
+                    <article class="admin-metric"><span>الغرف المفتوحة</span><strong id="admin-rooms-count">0</strong><p>غرف الانتظار والمباريات</p></article>
+                    <article class="admin-metric"><span>الأسئلة</span><strong id="admin-questions-count">0</strong><p>في جميع البنوك</p></article>
+                    <article class="admin-metric"><span>التصنيفات</span><strong id="admin-categories-count">0</strong><p>أقسام التحدي المتاحة</p></article>
+                </div>
+                <div class="admin-overview-grid">
+                    <section class="admin-card" aria-labelledby="online-title"><div class="admin-section-heading"><h2 id="online-title">المتصلون الآن</h2><span class="admin-live-label">تحديث تلقائي</span></div><p id="online-count" class="helper-message"></p><div id="online-players" class="admin-list"></div></section>
+                    <section class="admin-card" aria-labelledby="admin-ready-title"><h2 id="admin-ready-title">المحتوى الجاهز للعب</h2><p id="admin-active-bank" class="admin-active-bank"></p><p id="admin-content-summary" class="helper-message"></p><p class="helper-message">تسري تغييرات الأسئلة وإعدادات البنك على المباريات الجديدة. المباريات الجارية تتابع بالمحتوى الذي بدأت به.</p><p id="storage-status" class="admin-storage"></p></section>
+                </div>
+            </section>
+            <section id="admin-questions" class="admin-tab-panel hidden" role="tabpanel" aria-labelledby="admin-tab-questions">
+                <div class="admin-work-grid">
+                    <form id="question-form" class="admin-card admin-editor">
+                        <h2 id="question-editor-title">إضافة سؤال</h2>
+                        <label for="edit-category">التصنيف</label><select id="edit-category" required><option value="">اختر التصنيف</option></select>
+                        <label for="edit-question">السؤال</label><textarea id="edit-question" required maxlength="300" rows="3"></textarea>
+                        <div class="question-fields"><label>A<input id="edit-choice-0" required maxlength="160"></label><label>B<input id="edit-choice-1" required maxlength="160"></label><label>C<input id="edit-choice-2" required maxlength="160"></label><label>D<input id="edit-choice-3" required maxlength="160"></label></div>
+                        <label for="edit-correct">الإجابة الصحيحة</label><select id="edit-correct"><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select>
+                        <button class="primary full-width field-action" type="submit">حفظ السؤال</button><button id="cancel-edit" class="text-button full-width hidden" type="button">إلغاء التعديل</button>
+                    </form>
+                    <section class="admin-card" aria-labelledby="admin-question-list-title">
+                        <div class="admin-section-heading"><h2 id="admin-question-list-title">أسئلة البنك</h2><span id="question-results-count" class="helper-message" role="status"></span></div>
+                        <div class="admin-filters"><div><label for="question-search">بحث في الأسئلة</label><input id="question-search" type="search" placeholder="اكتب سؤالًا أو إجابة…" autocomplete="off"></div><div><label for="question-category-filter">التصنيف</label><select id="question-category-filter"><option value="">كل التصنيفات</option></select></div></div>
+                        <div id="bank-questions" class="admin-list"></div>
+                        <nav class="admin-pagination" aria-label="صفحات الأسئلة"><button id="question-prev" type="button" class="secondary compact-button">السابق</button><span id="question-page" class="helper-message" role="status"></span><button id="question-next" type="button" class="secondary compact-button">التالي</button></nav>
+                    </section>
+                </div>
+            </section>
+            <section id="admin-categories" class="admin-tab-panel hidden" role="tabpanel" aria-labelledby="admin-tab-categories">
+                <div class="admin-work-grid">
+                    <form id="category-form" class="admin-card admin-editor">
+                        <h2 id="category-editor-title">إضافة تصنيف</h2><p class="helper-message">اسم واضح وصورة بسيطة تساعد اللاعبين على اختيار التحدي.</p>
+                        <label for="category-name">اسم التصنيف</label><input id="category-name" required maxlength="60" placeholder="مثال: رياضة">
+                        <label for="category-image">صورة التصنيف</label><input id="category-image" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="category-image-help">
+                        <p id="category-image-help" class="helper-message">JPG أو PNG أو WebP، حتى 2 ميجابايت و4 ملايين بكسل.</p><img id="category-preview" class="admin-category-preview hidden" alt="معاينة صورة التصنيف" width="240" height="180"><p id="category-image-storage" class="helper-message"></p>
+                        <button id="category-save" class="primary full-width field-action" type="submit">حفظ التصنيف</button><button id="cancel-category-edit" class="text-button full-width hidden" type="button">إلغاء التعديل</button>
+                    </form>
+                    <section class="admin-card" aria-labelledby="categories-title"><h2 id="categories-title">التصنيفات</h2><p class="helper-message">تظهر التغييرات المحفوظة في غرف الانتظار. انقل أسئلة التصنيف إلى قسم آخر قبل حذفه.</p><div id="category-list" class="admin-list"></div></section>
+                </div>
+            </section>
+            <section id="admin-banks" class="admin-tab-panel hidden" role="tabpanel" aria-labelledby="admin-tab-banks">
+                <div class="admin-bank-grid">
+                    <section class="admin-card" aria-labelledby="banks-title"><h2 id="banks-title">إدارة البنك المحدد</h2><p class="helper-message">اختر البنك الذي ستُسحب منه أسئلة المباريات الجديدة.</p><button id="activate-bank" class="secondary full-width field-action" type="button">استخدام هذا البنك للعب</button><form id="rename-bank-form" class="admin-subsection"><label for="rename-bank-name">اسم البنك</label><input id="rename-bank-name" required maxlength="60"><button class="secondary full-width field-action" type="submit">حفظ اسم البنك</button><button id="delete-bank" class="text-button admin-delete full-width" type="button">حذف البنك المحدد</button></form></section>
+                    <form id="bank-form" class="admin-card"><h2>إنشاء بنك</h2><p class="helper-message">اجمع مجموعة جديدة من الأسئلة في بنك مستقل.</p><label for="bank-name">اسم البنك الجديد</label><input id="bank-name" required maxlength="60" placeholder="مثال: معلومات عامة"><button class="secondary full-width field-action" type="submit">إنشاء البنك</button></form>
+                    <section class="admin-card" aria-labelledby="admin-import-title"><h2 id="admin-import-title">استيراد وتصدير</h2><p class="helper-message">نزّل نسخة من البنك المحدد، أو أضف أسئلة من ملف JSON.</p><button id="export-bank" class="secondary full-width field-action" type="button">تنزيل نسخة JSON</button><div class="admin-subsection"><label for="import-category">تصنيف الأسئلة في الملف</label><select id="import-category"><option value="">استخدام تصنيف كل سؤال في الملف</option></select><p class="helper-message">يُستخدم التصنيف المختار للأسئلة التي لا تحتوي على categoryId.</p><label for="import-bank">إضافة أسئلة من ملف</label><input id="import-bank" type="file" accept=".json,application/json"><p class="helper-message">حتى 500 كيلوبايت. تُضاف الأسئلة إلى البنك المحدد.</p></div></section>
+                </div>
+            </section>
+        </div>
+    </main>
+
     <footer class="site-footer"><span dir="ltr">Wamda © 2027<span id="site-version"></span></span></footer>
 
     <dialog id="site-menu" class="site-menu" aria-labelledby="menu-title">
@@ -183,7 +261,14 @@
 
     <dialog id="rules-dialog" class="settings-dialog" aria-labelledby="rules-title">
         <div class="dialog-heading"><h2 id="rules-title">نظام اللعب</h2><button class="dialog-close" type="button" data-close="rules-dialog" aria-label="إغلاق">×</button></div>
-        <p class="placeholder-message">سيُضاف المحتوى قريبًا.</p>
+        <ol class="rules-list">
+            <li>اختر أقسام التحدي وشارك رمز الغرفة مع أصدقائك.</li>
+            <li>المباراة جولتان، في كل جولة 10 أسئلة. لكل سؤال 20 ثانية ومحاولة واحدة للإجابة.</li>
+            <li>يختار المضيف النقاط لأول شخص، أو أول 3 أو 5 أو 7 أشخاص يجيبون إجابة صحيحة. لكل فائز نقطة واحدة.</li>
+            <li>ينتقل المضيف إلى السؤال أو الجولة التالية بعد عرض النتائج.</li>
+            <li>عند انقطاع الاتصال تُستعاد جلستك ونتيجة إجابتك بعد العودة. وقت السؤال يستمر أثناء غيابك.</li>
+            <li>إذا غاب المضيف لأكثر من 30 ثانية، تنتقل الصلاحية إلى أقدم لاعب متصل.</li>
+        </ol>
     </dialog>
 
     <dialog id="rename-dialog" class="settings-dialog" aria-labelledby="rename-title">
@@ -196,87 +281,6 @@
         </form>
     </dialog>
 
-    <dialog id="developer-dialog" class="settings-dialog developer-dialog" aria-labelledby="developer-title">
-        <div class="dialog-heading"><h2 id="developer-title">وضع المطور</h2><button class="dialog-close" type="button" data-close="developer-dialog" aria-label="إغلاق">×</button></div>
-        <button id="developer-home" class="text-button" type="button">العودة للرئيسية</button>
-        <form id="developer-login">
-            <p class="hint">أدخل كود المطور لإدارة التصنيفات والأسئلة ومتابعة اللاعبين.</p>
-            <label for="developer-code">كود المطور</label>
-            <input id="developer-code" type="password" maxlength="256" required autocomplete="current-password">
-            <button class="primary full-width field-action" type="submit">دخول</button>
-        </form>
-        <p id="developer-message" class="helper-message" role="status"></p>
-        <div id="developer-content" class="hidden">
-            <div class="admin-toolbar"><button id="admin-refresh" class="secondary compact-button" type="button">تحديث</button><button id="admin-logout" class="text-button" type="button">تسجيل الخروج</button></div>
-            <section class="admin-section" aria-labelledby="online-title">
-                <h3 id="online-title">المتصلون الآن</h3>
-                <p id="online-count" class="helper-message"></p>
-                <div id="online-players" class="admin-list"></div>
-            </section>
-            <section class="admin-section" aria-labelledby="categories-title">
-                <h3 id="categories-title">التصنيفات</h3>
-                <p class="helper-message">تظهر التصنيفات المحفوظة مباشرة في الغرف وقائمة تصنيف السؤال. الأسئلة القديمة محفوظة ضمن «أسئلة عامة».</p>
-                <p id="category-image-storage" class="helper-message"></p>
-                <form id="category-form">
-                    <h4 id="category-editor-title">إضافة تصنيف</h4>
-                    <label for="category-name">اسم التصنيف</label>
-                    <input id="category-name" required maxlength="60" placeholder="مثال: رياضة">
-                    <label for="category-image">صورة التصنيف</label>
-                    <input id="category-image" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="category-image-help">
-                    <p id="category-image-help" class="helper-message">JPG أو PNG أو WebP، حتى 2 ميجابايت و4 ملايين بكسل. تُحفظ الصورة بحجم مناسب للعرض.</p>
-                    <img id="category-preview" class="admin-category-preview hidden" alt="معاينة صورة التصنيف" width="240" height="180">
-                    <button id="category-save" class="primary full-width field-action" type="submit">حفظ التصنيف</button>
-                    <button id="cancel-category-edit" class="text-button full-width hidden" type="button">إلغاء التعديل</button>
-                </form>
-                <div id="category-list" class="admin-list"></div>
-            </section>
-            <section class="admin-section" aria-labelledby="banks-title">
-                <h3 id="banks-title">بنوك الأسئلة</h3>
-                <p id="storage-status" class="helper-message"></p>
-                <label for="bank-select">البنك</label><select id="bank-select"></select>
-                <p id="bank-status" class="helper-message"></p>
-                <button id="activate-bank" class="secondary full-width field-action" type="button">استخدام هذا البنك للمباريات الجديدة</button>
-                <form id="rename-bank-form" class="admin-inline">
-                    <label for="rename-bank-name">تغيير اسم البنك المحدد</label>
-                    <input id="rename-bank-name" required maxlength="60">
-                    <button class="secondary full-width field-action" type="submit">حفظ اسم البنك</button>
-                    <button id="delete-bank" class="text-button full-width" type="button">حذف البنك المحدد</button>
-                </form>
-                <form id="bank-form" class="admin-inline">
-                    <label for="bank-name">إنشاء بنك جديد</label>
-                    <input id="bank-name" required maxlength="60" placeholder="مثال: معلومات عامة">
-                    <button class="secondary full-width field-action" type="submit">إنشاء البنك</button>
-                </form>
-                <details class="admin-import"><summary>استيراد وتصدير الأسئلة</summary>
-                    <p class="helper-message">يُضاف محتوى الملف إلى البنك المحدد. كل سؤال يحتاج categoryId لتصنيف موجود، أو اختر تصنيفًا للأسئلة التي لا تحدد تصنيفًا داخل الملف.</p>
-                    <button id="export-bank" class="secondary full-width field-action" type="button">تنزيل نسخة JSON</button>
-                    <label for="import-category">تصنيف الأسئلة التي لا تحدد تصنيفًا</label>
-                    <select id="import-category"><option value="">استخدام تصنيف كل سؤال في الملف</option></select>
-                    <label for="import-bank">إضافة أسئلة من ملف JSON</label>
-                    <input id="import-bank" type="file" accept=".json,application/json">
-                </details>
-            </section>
-            <section class="admin-section" aria-labelledby="question-editor-title">
-                <h3 id="question-editor-title">إضافة سؤال</h3>
-                <form id="question-form">
-                    <label for="edit-category">التصنيف</label>
-                    <select id="edit-category" required><option value="">اختر التصنيف</option></select>
-                    <label for="edit-question">السؤال</label><textarea id="edit-question" required maxlength="300" rows="2"></textarea>
-                    <div class="question-fields">
-                        <label>A<input id="edit-choice-0" required maxlength="160"></label>
-                        <label>B<input id="edit-choice-1" required maxlength="160"></label>
-                        <label>C<input id="edit-choice-2" required maxlength="160"></label>
-                        <label>D<input id="edit-choice-3" required maxlength="160"></label>
-                    </div>
-                    <label for="edit-correct">الإجابة الصحيحة</label>
-                    <select id="edit-correct"><option value="0">A</option><option value="1">B</option><option value="2">C</option><option value="3">D</option></select>
-                    <button class="primary full-width field-action" type="submit">حفظ السؤال</button>
-                    <button id="cancel-edit" class="text-button full-width hidden" type="button">إلغاء التعديل</button>
-                </form>
-                <div id="bank-questions" class="admin-list"></div>
-            </section>
-        </div>
-    </dialog>
     <div id="connection-overlay" class="connection-overlay hidden">
         <div class="connection-card">
             <span class="connection-loader" aria-hidden="true"></span>
@@ -287,8 +291,10 @@
     <p id="host-notice" class="host-notice hidden" role="status" aria-live="polite"></p>
     <noscript><p class="noscript-message">فعّل جافاسكربت للعب وَمْضة.</p></noscript>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="name-validation.js"></script>
-    <script src="app.js"></script>
-    <script src="settings.js"></script>
+    <script src="/name-validation.js"></script>
+    <script src="/navigation.js"></script>
+    <script src="/app.js"></script>
+    <script src="/settings.js"></script>
+    <script src="/developer.js"></script>
 </body>
 </html>

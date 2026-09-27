@@ -25,6 +25,16 @@ test('admin authentication, logout, connection stats, rename, validation and rat
         const s = io(url, { transports: ['websocket'], reconnection: false }); clients.push(s);
         await new Promise(resolve => s.once('connect', resolve)); return s;
     }
+    const page = await fetch(url + '/developer');
+    assert.equal(page.status, 200);
+    assert.equal(page.headers.get('cache-control'), 'no-store');
+    const markup = await page.text();
+    assert.match(markup, /id="developer-page"/);
+    assert.match(markup, /id="game-main"/);
+    assert.equal(markup.includes(code), false, 'The public page must never embed an admin credential');
+    const slash = await fetch(url + '/developer/', { redirect: 'manual' });
+    assert.equal(slash.status, 308);
+    assert.equal(slash.headers.get('location'), '/developer');
     const admin = await connect(); const player = await connect();
     assert.equal((await request(player, 'adminRead')).unauthorized, true);
     assert.equal((await request(player, 'adminMutate', { action: 'createBank', name: 'bad' })).unauthorized, true);

@@ -2,6 +2,7 @@
 (() => {
     const storageKey = "firsthit-theme";
     const root = document.documentElement;
+    root.dataset.page = window.location.pathname?.replace(/\/+$/, "") === "/developer" ? "developer" : "game";
     const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
     let preference = null;
 

@@ -1,9 +1,100 @@
+/* The developer workspace shares theme tokens, with its own compact rhythm. */
+.developer-page { width: 100%; max-width: 1240px; flex: 1; margin-inline: auto; padding: 40px 24px 56px; font-size: 16px; line-height: 1.7; }
+.developer-page *, .developer-page *::before, .developer-page *::after { min-width: 0; }
+.developer-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.developer-heading h1 { margin: 2px 0 8px; font-size: clamp(28px, 3vw, 36px); font-weight: 700; line-height: 1.4; }
+.developer-heading p { margin: 0; color: var(--muted); font-size: 15px; }
+.developer-heading .admin-eyebrow { font-size: 13px; font-weight: 500; }
+.developer-heading > button { flex-shrink: 0; }
+.developer-page h2 { margin: 0 0 8px; font-size: 19px; font-weight: 700; line-height: 1.5; }
+.developer-page label { display: block; margin: 18px 0 8px; font-size: 14px; font-weight: 500; }
+.developer-page :is(input, select, textarea) { width: 100%; max-width: 100%; min-height: 46px; padding: 10px 12px; font-size: 16px; border-radius: 10px; }
+.developer-page textarea { resize: vertical; }
+.developer-page input[type="file"] { font-size: 13px; padding: 10px; }
+.developer-page input[type="file"]::file-selector-button { max-width: 100%; margin-inline-end: 8px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font: inherit; color: var(--text); background: var(--surface); }
+.developer-page :is(.primary, .secondary, .text-button) { min-height: 44px; font-size: 15px; font-weight: 500; }
+.developer-page .compact-button { padding: 8px 14px; }
+.developer-page .helper-message { margin: 8px 0 0; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.admin-card { padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); overflow-wrap: anywhere; }
+.admin-card > :first-child { margin-top: 0; }
+.admin-message { margin: -8px 0 20px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font-size: 14px; overflow-wrap: anywhere; }
+.admin-message:empty { display: none; }
+.developer-login { max-width: 440px; margin: 56px auto 48px; padding: 32px; }
+.admin-login-icon { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; margin-bottom: 20px; border-radius: 14px; background: var(--surface-muted); color: var(--muted); }
+.admin-login-icon svg { width: 24px; height: 24px; }
+.admin-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.admin-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.admin-tabs button { padding: 9px 17px; min-height: 44px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font: inherit; font-size: 15px; font-weight: 500; cursor: pointer; }
+.admin-tabs button[aria-selected="true"] { background: var(--surface-muted); color: var(--text); }
+.admin-tabs button:hover { color: var(--text); }
+.admin-actions, .admin-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.admin-bank-context { display: grid; grid-template-columns: minmax(180px, 320px) minmax(0, 1fr); align-items: end; gap: 24px; margin-bottom: 24px; padding: 18px 24px; }
+.admin-bank-context label { margin-top: 0; }
+.admin-bank-context .helper-message { margin: 0 0 10px; }
+.admin-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.admin-metric { padding: 22px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.admin-metric > span { color: var(--muted); font-size: 14px; }
+.admin-metric strong { display: block; margin-top: 6px; font-size: 34px; line-height: 1.5; font-weight: 700; font-variant-numeric: tabular-nums; }
+.admin-metric p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+.admin-overview-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+.admin-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.admin-section-heading h2 { margin-bottom: 0; }
+.admin-live-label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.admin-live-label::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+.admin-list { display: grid; gap: 12px; margin-top: 18px; }
+.admin-player { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border-radius: 10px; background: var(--surface-muted); }
+.admin-player bdi { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.admin-player span { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.admin-empty { margin: 0; padding: 24px 14px; border: 1px dashed var(--border); border-radius: 10px; font-size: 14px; text-align: center; color: var(--muted); }
+.admin-active-bank { margin: 20px 0 4px; font-weight: 500; }
+.admin-storage { margin: 24px 0 0; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.admin-work-grid { display: grid; grid-template-columns: minmax(280px, .8fr) minmax(0, 1.25fr); align-items: start; gap: 24px; }
+.question-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.question-fields input { margin-top: 8px; }
+.admin-filters { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 12px; }
+.admin-question { padding: 16px; border: 1px solid var(--border); border-radius: 12px; }
+.admin-question-category { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+.admin-question-text { margin: 0; font-weight: 500; }
+.admin-row-actions { margin-top: 12px; }
+.developer-page .admin-delete { color: var(--error); }
+.admin-pagination { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 20px; }
+.admin-pagination .helper-message { margin: 0; direction: ltr; }
 .admin-category-preview { display: block; width: min(240px, 100%); height: auto; aspect-ratio: 4 / 3; object-fit: cover; margin-top: 16px; border: 1px solid var(--border); border-radius: 12px; }
-.admin-category-preview.hidden { display: none; }
-#category-editor-title { margin: 18px 0 0; font-size: 16px; }
-.admin-category { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; }
-.admin-category-image { display: block; width: 72px; height: 72px; object-fit: cover; border-radius: 9px; background: var(--surface-muted); }
-.admin-category-name { margin: 0; overflow-wrap: anywhere; font-size: 16px; font-weight: 700; }
+.admin-category { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.admin-category-image { display: block; width: 64px; height: 64px; object-fit: cover; border-radius: 9px; background: var(--surface-muted); }
+.admin-category-name { margin: 0; overflow-wrap: anywhere; font-size: 16px; font-weight: 500; }
 .admin-category .helper-message { margin: 2px 0 0; }
-.admin-category-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; grid-column: 1 / -1; }
-.developer-dialog .admin-toolbar { flex-wrap: wrap; }
+.admin-category .admin-row-actions { grid-column: 1 / -1; margin-top: 0; }
+.admin-bank-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 24px; }
+.admin-subsection { margin-top: 24px; padding-top: 6px; border-top: 1px solid var(--border); }
+@media (max-width: 999px) {
+    .admin-bank-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .admin-bank-grid > :last-child { grid-column: 1 / -1; }
+    .admin-work-grid { grid-template-columns: minmax(250px, .85fr) minmax(0, 1fr); gap: 18px; }
+    .admin-work-grid .admin-card { padding: 20px; }
+    .admin-filters { grid-template-columns: 1fr; gap: 0; }
+}
+@media (max-width: 719px) {
+    .developer-page { padding: 28px 18px 40px; }
+    .developer-heading { align-items: flex-start; flex-direction: column; gap: 16px; margin-bottom: 24px; }
+    .developer-heading > button { align-self: flex-start; }
+    .developer-login { margin: 32px auto; padding: 24px; }
+    .admin-toolbar { align-items: stretch; gap: 12px; }
+    .admin-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; gap: 2px; }
+    .admin-tabs button { padding: 9px 4px; font-size: 13px; }
+    .admin-actions { justify-content: space-between; width: 100%; }
+    .admin-card { padding: 20px; }
+    .admin-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .admin-metric { padding: 16px; }
+    .admin-metric strong { font-size: 30px; }
+    .admin-overview-grid, .admin-work-grid, .admin-bank-grid, .admin-bank-context { grid-template-columns: 1fr; gap: 18px; }
+    .admin-bank-grid > :last-child { grid-column: auto; }
+    .admin-bank-context { padding: 18px 20px; gap: 10px; }
+    .admin-bank-context .helper-message { margin: 0; }
+}
+@media (max-width: 359px) {
+    .developer-page { padding-inline: 14px; }
+    .developer-page .admin-card { padding: 16px; }
+    .admin-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .question-fields { grid-template-columns: 1fr; }
+}

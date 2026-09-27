@@ -74,7 +74,7 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     document.getElementById = id => elements.get(id) || null;
     document.createElement = tag => new Element(tag);
     document.querySelector = selector => selector === 'meta[name="theme-color"]' ? meta : null;
-    const pageRegions = [new Element("header"), new Element("main"), el("developer-dialog")];
+    const pageRegions = [new Element("header"), el("game-main"), el("developer-page"), el("rename-dialog")];
     document.querySelectorAll = selector => selector === "body > header, body > main, body > dialog" ? pageRegions : selector === 'dialog[open]' ? [...elements.values()].filter(element => element.tagName === 'dialog' && element.open) : [];
     const window = new Element("window");
     let reloads = 0;
@@ -435,24 +435,24 @@ test("home controls preserve acknowledged room exit and prevent leaving an activ
     ui.socket.pending.shift()(null, { ok: false, message: "تعذر المغادرة." });
     assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
     await ui.el("home-button").click();
-    ui.el("developer-dialog").open = true;
+    ui.el("rename-dialog").open = true;
     ui.socket.pending.shift()(null, { ok: true });
     assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
-    assert.equal(ui.el("developer-dialog").open, false);
+    assert.equal(ui.el("rename-dialog").open, false);
     ui.socket.defer = false;
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"] }));
     ui.socket.receive("question", { questionId: 0, round: 1, rounds: 2, number: 1, total: 10, question: "سؤال", choices: ["أ", "ب"], duration: 20 });
     const sent = ui.socket.sent.length;
-    assert.equal(ui.el("developer-home").disabled, true);
+    assert.equal(ui.el("developer-home").disabled, false, "Returning from developer tools must not leave the match");
     await ui.el("home-button").fire("click");
     vm.runInContext("returnHome()", ui.context);
     assert.equal(ui.socket.sent.length, sent);
     assert.equal(ui.el("game-screen").classList.contains("hidden"), false);
     ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: true, reason: "quota", winners: [{ id: "host", awardedPoints: 1 }] });
     assert.equal(ui.el("answer-message").textContent, "إجابة صحيحة! +1 نقطة");
-    assert.equal(ui.el("developer-home").disabled, true);
+    assert.equal(ui.el("developer-home").disabled, false, "Returning from developer tools must not leave the match");
     ui.socket.receive("roundOver", { round: 1, ranking: [{ name: "أحمد", score: 2 }] });
-    assert.equal(ui.el("developer-home").disabled, true);
+    assert.equal(ui.el("developer-home").disabled, false, "Returning from developer tools must not leave the match");
     await ui.el("home-button").fire("click");
     assert.equal(ui.socket.sent.length, sent);
     ui.socket.receive("gameOver", { ranking: [{ name: "أحمد", score: 2 }] });
@@ -485,9 +485,9 @@ test("brief outages stay invisible; sustained recovery locks page until server s
     restore(ui, recoveryState()); ui.advance(2);
     assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
     ui.socket.connected = false; ui.socket.receive("disconnect");
-    ui.el("developer-dialog").open = true;
+    ui.el("rename-dialog").open = true;
     ui.advance(800);
-    assert.equal(ui.el("developer-dialog").open, false);
+    assert.equal(ui.el("rename-dialog").open, false);
     assert.ok(!ui.el("connection-overlay").classList.contains("hidden"));
     assert.ok(ui.pageRegions.every(el => el.inert));
     assert.equal(ui.el("connection-message").textContent, "جاري إعادة الاتصال…");
@@ -798,4 +798,46 @@ test("disconnect and replaced-session recovery invalidate an open refresh confir
         assert.equal(ui.el("refresh-dialog").open, false);
         assert.equal(ui.socket.sent.length, 0);
     }
+});
+
+
+test("developer page keeps incoming game updates in the background and the brand returns without leaving", async () => {
+    const ui = setup();
+    let developer = true;
+    ui.window.WamdaNavigation = { isDeveloperPage: () => developer, closeDeveloperPage() { developer = false; } };
+    let scrolls = 0;
+    ui.window.scrollTo = () => scrolls++;
+    const state = recoveryState();
+    restore(ui, state);
+    assert.equal(scrolls, 0, "Snapshot must not scroll the developer workspace");
+    assert.equal(ui.el("question-text").focused, undefined);
+    ui.socket.receive("question", { ...state.question, questionId: 7, number: 8 });
+    assert.equal(scrolls, 0);
+    assert.match(ui.el("question-number").textContent, /سؤال 8/);
+    ui.socket.receive("roundOver", { round: 1, ranking: [{ name: "أحمد", score: 3 }] });
+    assert.equal(scrolls, 0);
+    assert.equal(ui.intervals.size, 0, "Do not animate hidden results");
+    await ui.el("home-logo").click();
+    assert.equal(developer, false);
+    assert.equal(ui.socket.sent.length, 0);
+    assert.equal(ui.reloads, 0);
+    assert.equal(ui.store.has("wamda-session-v1"), true);
+});
+
+
+test("quick developer wake synchronization preserves the focused editor before an overlay is needed", async () => {
+    const ui = setup();
+    ui.window.WamdaNavigation = { isDeveloperPage: () => true };
+    const editor = ui.el("edit-question");
+    editor.value = "مسودة أثناء مزامنة الاتصال";
+    editor.isConnected = true;
+    editor.closest = () => null;
+    ui.document.activeElement = editor;
+    ui.document.visibilityState = "visible";
+    ui.socket.replies.syncState = { ok: true, name: "أحمد", state: null };
+    await ui.document.fire("visibilitychange");
+    assert.equal(editor.focused, true);
+    assert.equal(editor.value, "مسودة أثناء مزامنة الاتصال");
+    assert.equal(ui.el("developer-title").focused, undefined);
+    assert.equal(ui.el("connection-overlay").classList.contains("hidden"), true);
 });

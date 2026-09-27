@@ -56,6 +56,13 @@ function stopResultsAnimation() {
     resultMotions = [];
 }
 
+function isDeveloperPage() { return Boolean(window.WamdaNavigation?.isDeveloperPage()); }
+function focusCurrentPageHeading() {
+    const heading = isDeveloperPage() ? document.getElementById("developer-title")
+        : Object.values(screens).find(screen => !screen.classList.contains("hidden"))?.querySelector("h1");
+    heading?.focus({ preventScroll: true });
+}
+
 function showScreen(screenName) {
     stopResultsAnimation();
 
@@ -64,6 +71,7 @@ function showScreen(screenName) {
     }
 
     screens[screenName].classList.remove("hidden");
+    if (isDeveloperPage()) return;
 
     const heading = screens[screenName].querySelector("h1");
     if (heading) heading.focus({ preventScroll: true });
@@ -128,10 +136,9 @@ const nextRoundButton = document.getElementById("next-round-button");
 function updateControls() {
     const logo = document.getElementById("home-logo");
     logo.disabled = homePending;
-    logo.title = isActiveGame() ? "تحديث الصفحة واستعادة المباراة" : "العودة إلى صفحة الاسم";
+    logo.title = isDeveloperPage() ? "العودة للعبة" : isActiveGame() ? "تحديث الصفحة واستعادة المباراة" : "العودة إلى صفحة الاسم";
     logo.setAttribute("aria-label", `وَمْضة — ${logo.title}`);
-    logo.setAttribute("aria-haspopup", isActiveGame() ? "dialog" : "false");
-    document.getElementById("developer-home").disabled = isActiveGame();
+    logo.setAttribute("aria-haspopup", !isDeveloperPage() && isActiveGame() ? "dialog" : "false");
     nextQuestionButton.classList.add("hidden");
     nextRoundButton.classList.add("hidden");
     if (phase === "review" && amHost) nextQuestionButton.classList.remove("hidden");
@@ -165,6 +172,8 @@ function beginRecovery() {
     connectionReady = false;
     clearInterval(countdown);
     if (overlayDelay !== null) return;
+    // A quick wake sync must keep the developer's current editing position.
+    if (isDeveloperPage()) previousFocus = document.activeElement;
     overlayDelay = setTimeout(() => {
         previousFocus = document.activeElement;
         // An open modal lives above fixed overlays, so close it before blocking the page.
@@ -187,7 +196,7 @@ function finishRecovery() {
     reconnectButton.classList.add("hidden");
     lockPage(false);
     if (previousFocus?.isConnected && !previousFocus.closest("[inert], .hidden")) previousFocus.focus({ preventScroll: true });
-    else Object.values(screens).find(screen => !screen.classList.contains("hidden"))?.querySelector("h1")?.focus({ preventScroll: true });
+    else focusCurrentPageHeading();
     previousFocus = null;
 }
 function storeSession(session) {
@@ -893,7 +902,7 @@ function showResults(data, final) {
 
         showScreen("results");
 
-        renderRanking(data.ranking, data.round === 1 && !final);
+        renderRanking(data.ranking, !isDeveloperPage() && data.round === 1 && !final);
 }
 
 function renderRanking(ranking, animateFirstRound) {
@@ -1044,7 +1053,9 @@ document.getElementById("refresh-confirm").addEventListener("click", () => {
 });
 
 homeButton.addEventListener("click", returnHome);
+document.addEventListener("wamda:pagechange", updateControls);
 document.getElementById("home-logo").addEventListener("click", () => {
+    if (isDeveloperPage()) { window.WamdaNavigation.closeDeveloperPage(); return; }
     if (homePending || replaced) return;
     if (isActiveGame()) { requestGameRefresh(); return; }
     if (!isConnected()) return;

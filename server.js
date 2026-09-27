@@ -20,6 +20,12 @@ app.get("/api/version", (req, res) => {
     res.set("Cache-Control", "no-store");
     res.json({ version: siteVersion, rounds: TOTAL_ROUNDS, questionsPerRound: QUESTIONS_PER_ROUND, duration: DURATION });
 });
+// Serve the same client shell for the developer page; socket auth remains server-owned.
+app.get("/developer", (req, res) => {
+    if (req.path.endsWith("/")) return res.redirect(308, "/developer");
+    res.set("Cache-Control", "no-store");
+    res.sendFile(path.join(__dirname, "public/index.html"));
+});
 app.get("/favicon.png", (req, res) => res.sendFile(path.join(__dirname, "favicon.png")));
 app.use(express.static(path.join(__dirname, "public"), {
     setHeaders(res, filename) { res.set("Cache-Control", /\.(webp|svg|ttf)$/.test(filename) ? "public, max-age=3600" : "no-store"); }

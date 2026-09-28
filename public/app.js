@@ -555,7 +555,7 @@ function renderLobbySettings() {
     });
     const count = lobbySettings.availableQuestionCount ?? categories.filter(c => lobbySettings.selectedCategoryIds.includes(c.id)).reduce((sum, c) => sum + (c.count || 0), 0);
     document.getElementById("category-count").textContent = `${lobbySettings.selectedCategoryIds.length} أقسام محددة · ${count} سؤالًا متاحًا · تحتاج المباراة 20 سؤالًا`;
-    document.getElementById("category-hint").textContent = amHost ? "اختر قسمًا أو أكثر. أسئلة المباراة من البنك المفعّل." : "المضيف يختار الأقسام. تظهر اختياراته هنا مباشرة.";
+    document.getElementById("category-hint").textContent = amHost ? "" : "المضيف يختار الأقسام. تظهر اختياراته هنا مباشرة.";
     const scoring = document.getElementById("scoring-mode");
     scoring.value = String(lobbySettings.scoringMode);
     scoring.disabled = !editable;

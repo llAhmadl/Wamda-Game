@@ -83,6 +83,7 @@ const { installAdmin } = require("./lib/admin");
 const { installCategoryImages } = require("./lib/category-images");
 const questionStore = createQuestionStore({ required: QUESTIONS_PER_ROUND * TOTAL_ROUNDS });
 installCategoryImages(app, questionStore);
+app.use(require('./lib/client-errors').httpErrorHandler);
 
 
 // -------------------------

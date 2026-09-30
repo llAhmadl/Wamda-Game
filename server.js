@@ -37,7 +37,7 @@ const io = new Server(server, {
         });
     },
     connectTimeout: limits.handshakeTimeoutMs,
-    maxHttpBufferSize: 2 * 1024 * 1024 + 64 * 1024
+    maxHttpBufferSize: limits.socketBufferBytes
 });
 gate.install(io.engine);
 
@@ -48,6 +48,9 @@ io.engine.use((req, res, next) => {
 });
 io.engine.use((req, res, next) => { req.clientIp = clientIp(req); next(); });
 io.use((socket, next) => { socket.data.clientIp = socket.request.clientIp; next(); });
+
+const { installSocketProtection } = require('./lib/socket-protection');
+installSocketProtection(io, limits);
 
 const PORT = Number(process.env.PORT ?? 3000);
 

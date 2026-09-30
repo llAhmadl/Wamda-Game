@@ -8,7 +8,15 @@ const { version: siteVersion } = require("./package.json");
 const { securityHeaders } = require("./lib/security-headers");
 const { configureClientIp } = require("./lib/client-ip");
 const app = express();
-const clientIp = configureClientIp(app);
+const { validateAdminConfig } = require('./lib/security-config');
+let clientIp;
+try {
+    validateAdminConfig();
+    clientIp = configureClientIp(app);
+} catch (error) {
+    console.error(`[Startup] ${error.message}`);
+    process.exit(1);
+}
 app.disable('x-powered-by');
 const headers = securityHeaders();
 app.use(headers);

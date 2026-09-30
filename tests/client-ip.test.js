@@ -44,3 +44,24 @@ test('admin lockout uses the verified client behind a trusted proxy, not a spoof
     const b = await connect('203.0.113.9');
     assert.equal((await login(b, 'test-admin-credential')).ok, true);
 });
+
+test('admin lockout tracking is bounded and expired entries free capacity without evicting active lockouts', async t => {
+    let clock = 100000;
+    const app = express(), resolve = configureClientIp(app, { TRUST_PROXY: 'loopback' });
+    const server = http.createServer(app), io = new Server(server), clients = [];
+    io.use((socket, next) => { socket.data.clientIp = resolve(socket.request); next(); });
+    installAdmin(io, new Map(), { snapshot: () => ({}) }, { env: { ADMIN_CODE: 'test-only-admin-code', MAX_ADMIN_LOGIN_IPS: '1' }, now: () => clock });
+    await new Promise(r => server.listen(0, '127.0.0.1', r));
+    t.after(async () => { clients.forEach(s => s.disconnect()); await new Promise(r => io.close(r)); });
+    async function connect(ip) {
+        const s = client(`http://127.0.0.1:${server.address().port}`, { transports: ['websocket'], reconnection: false, extraHeaders: { 'X-Forwarded-For': ip } });
+        clients.push(s); await new Promise(r => s.once('connect', r)); return s;
+    }
+    const ask = (s, code) => new Promise((resolve, reject) => s.timeout(2000).emit('adminLogin', { code }, (e, r) => e ? reject(e) : resolve(r)));
+    const a = await connect('203.0.113.1'), b = await connect('203.0.113.2');
+    for (let i = 0; i < 5; i++) assert.equal((await ask(a, 'wrong')).ok, false);
+    assert.match((await ask(b, 'wrong')).message, /مشغول/);
+    assert.match((await ask(a, 'test-only-admin-code')).message, /محاولات كثيرة/);
+    clock += 15 * 60 * 1000 + 1;
+    assert.equal((await ask(b, 'test-only-admin-code')).ok, true);
+});

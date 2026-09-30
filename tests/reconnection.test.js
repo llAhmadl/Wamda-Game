@@ -475,3 +475,30 @@ test('all player name entry points sanitize before storing and broadcasting', as
         assert.equal((await snapshot(host)).players[1].name, 'مشعل');
     }
 });
+
+test('ordinary players cannot start or advance questions/rounds by forging host fields', async t => {
+    const f = await setup(t), { group: [host, guest], code, model } = await f.room(2);
+    for (const command of ['startGame', 'updateRoomSettings']) {
+        assert.equal((await request(guest, command, { code, hostId: host.session.playerId, playerId: host.session.playerId,
+            categoryIds: ['test'], scoringMode: 7 })).ok, false);
+    }
+    let q = await f.start(host, code);
+    for (let i = 0; i < 10; i++) {
+        f.advance(20000);
+        guest.emit('nextQuestion', { code, gameId: q.gameId, questionId: i, hostId: host.session.playerId });
+        await snapshot(guest);
+        assert.equal(model.phase, 'review'); assert.equal(model.questionIndex, i);
+        host.emit('nextQuestion', { code, gameId: q.gameId, questionId: i });
+        await snapshot(host);
+    }
+    assert.equal(model.phase, 'roundResults');
+    guest.emit('nextRound', { code, gameId: q.gameId, round: 1, hostId: host.session.playerId });
+    await snapshot(guest); assert.equal(model.phase, 'roundResults');
+    const next = event(host, 'question'); host.emit('nextRound', { code, gameId: q.gameId, round: 1 });
+    q = await next;
+    const accepted = await answer(guest, code, q, 0, { points: 9999, playerId: host.session.playerId });
+    assert.equal(accepted.answer.awardedPoints, 1);
+    assert.deepEqual(await answer(guest, code, q), accepted);
+    assert.equal(model.players.get(guest.session.playerId).score, 1);
+    assert.equal(model.players.get(host.session.playerId).score, 0);
+});

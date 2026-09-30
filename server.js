@@ -6,7 +6,9 @@ const { installMultiplayer, QUESTIONS_PER_ROUND, TOTAL_ROUNDS, DURATION } = requ
 const { version: siteVersion } = require("./package.json");
 
 const { securityHeaders } = require("./lib/security-headers");
+const { configureClientIp } = require("./lib/client-ip");
 const app = express();
+const clientIp = configureClientIp(app);
 app.disable('x-powered-by');
 const headers = securityHeaders();
 app.use(headers);
@@ -14,6 +16,8 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 2 * 1024 * 1024 + 64 * 1024 });
 
 io.engine.use(headers);
+io.engine.use((req, res, next) => { req.clientIp = clientIp(req); next(); });
+io.use((socket, next) => { socket.data.clientIp = socket.request.clientIp; next(); });
 
 const PORT = Number(process.env.PORT ?? 3000);
 

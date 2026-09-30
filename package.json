@@ -1,6 +1,6 @@
 {
   "name": "wamda",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Real-time multiplayer quiz game",
   "main": "server.js",
   "scripts": {

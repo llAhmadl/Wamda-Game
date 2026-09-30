@@ -52,58 +52,71 @@
                 <h1 id="home-title" tabindex="-1">جاهز <span class="challenge-accent">للتحدي؟</span></h1>
                 <p><span class="greeting">حيّاك،</span> <bdi id="player-name"></bdi>.</p>
             </div>
-            <div class="panel">
-                <button id="create-button" class="primary full-width" type="button">إنشاء غرفة</button>
-                <div class="divider"><span>أو انضم إلى غرفة</span></div>
-                <label for="room-code-input">رمز الغرفة</label>
-                <input id="room-code-input" class="code-input" type="text" placeholder="ادخل رمز الغرفة"
-                    maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false"
-                    enterkeyhint="go" aria-describedby="home-error">
-                <button id="join-button" class="secondary full-width field-action" type="button">انضمام</button>
-                <p id="home-error" class="error" role="alert"></p>
+            <div class="panel room-entry">
+                <section class="room-create" aria-labelledby="room-create-title">
+                    <h2 id="room-create-title">أنشئ غرفة جديدة</h2>
+                    <button id="create-button" class="primary full-width" type="button"><span>إنشاء غرفة</span><svg class="room-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+                </section>
+                <div class="divider"><span>أو</span></div>
+                <section class="room-join" aria-labelledby="room-join-title">
+                    <h2 id="room-join-title">انضم لأصحابك</h2>
+                    <label for="room-code-input">رمز الغرفة</label>
+                    <input id="room-code-input" class="code-input" type="text" placeholder="ادخل رمز الغرفة"
+                        maxlength="5" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                        enterkeyhint="go" aria-describedby="home-error">
+                    <button id="join-button" class="secondary full-width field-action" type="button"><span>دخول الغرفة</span><svg class="room-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg></button>
+                    <p id="home-error" class="error" role="alert"></p>
+                </section>
             </div>
         </section>
 
         <section id="lobby-screen" class="screen hidden" aria-labelledby="lobby-title">
             <div class="screen-heading">
                 <h1 id="lobby-title" tabindex="-1">غرفة الانتظار</h1>
-                <p>شارك الرمز مع أصدقائك.</p>
+                <p>جولتان · 20 سؤالًا</p>
             </div>
-            <div class="panel">
+            <div class="lobby-invite">
                 <div class="room-share">
                     <div>
                         <p class="small-label">رمز الغرفة</p>
                         <strong id="room-code" class="room-code">-----</strong>
                     </div>
-                    <button id="copy-code" class="secondary compact-button" type="button">نسخ الرمز</button>
+                    <button id="copy-code" class="secondary compact-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="3"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg><span>نسخ الرمز</span></button>
                 </div>
                 <p id="copy-message" class="helper-message" role="status"></p>
-                <div class="section-heading lobby-players-heading">
-                    <h2>اللاعبون</h2><span id="player-count" class="count-badge">0</span>
-                </div>
-                <div id="players-list" class="players"></div>
             </div>
-            <section class="lobby-categories" aria-labelledby="categories-heading">
-                <div class="section-heading"><h2 id="categories-heading">اختر أقسام التحدي</h2><span class="small-label">جولتان · 20 سؤالًا</span></div>
-                <p id="category-hint" class="hint">يمكن اختيار أكثر من قسم.</p>
-                <div id="category-cards" class="category-grid" role="group" aria-label="أقسام الأسئلة"></div>
-                <p id="category-count" class="helper-message" role="status"></p>
-            </section>
-            <div class="panel lobby-settings">
-                <label for="scoring-mode">النقاط للإجابات الصحيحة الأسرع</label>
-                <select id="scoring-mode" aria-describedby="scoring-description">
-                    <option value="1">أول شخص</option>
-                    <option value="3">أول 3 أشخاص</option>
-                    <option value="5">أول 5 أشخاص</option>
-                    <option value="7">أول 7 أشخاص</option>
-                </select>
-                <p id="scoring-description" class="helper-message"></p>
-                <div class="lobby-actions">
-                    <p id="host-message" class="hint">بانتظار المضيف...</p>
-                    <p id="lobby-error" class="error" role="alert"></p>
-                    <button id="start-button" class="primary full-width hidden" type="button">بدء اللعبة</button>
-                    <button id="leave-button" class="text-button full-width" type="button">مغادرة الغرفة</button>
-                </div>
+            <div class="lobby-layout">
+                <section class="lobby-roster" aria-labelledby="players-heading">
+                    <div class="section-heading">
+                        <h2 id="players-heading">اللاعبون</h2><span id="player-count" class="count-badge">0</span>
+                    </div>
+                    <div id="players-list" class="players"></div>
+                </section>
+                <section class="lobby-categories" aria-labelledby="categories-heading">
+                    <div class="section-heading"><h2 id="categories-heading">أقسام التحدّي</h2></div>
+                    <p id="category-hint" class="hint"></p>
+                    <div id="category-cards" class="category-grid" role="group" aria-label="أقسام الأسئلة"></div>
+                    <p id="category-count" class="helper-message" role="status"></p>
+                </section>
+                <section class="lobby-settings" aria-labelledby="lobby-settings-title">
+                    <div class="lobby-scoring">
+                        <h2 id="lobby-settings-title">نظام النقاط</h2>
+                        <label for="scoring-mode">من يكسب نقطة عند الإجابة الصحيحة؟</label>
+                        <select id="scoring-mode" aria-describedby="scoring-description">
+                            <option value="1">أول شخص</option>
+                            <option value="3">أول 3 أشخاص</option>
+                            <option value="5">أول 5 أشخاص</option>
+                            <option value="7">أول 7 أشخاص</option>
+                        </select>
+                        <p id="scoring-description" class="helper-message"></p>
+                    </div>
+                    <div class="lobby-actions">
+                        <p id="host-message" class="hint">بانتظار المضيف...</p>
+                        <p id="lobby-error" class="error" role="alert"></p>
+                        <button id="start-button" class="primary full-width hidden" type="button">بدء اللعبة</button>
+                        <button id="leave-button" class="text-button full-width" type="button">مغادرة الغرفة</button>
+                    </div>
+                </section>
             </div>
         </section>
 

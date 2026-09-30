@@ -1,40 +1,73 @@
 .brand { border: 0; padding: 4px 0 0; background: none; color: var(--text); cursor: pointer; }
 .brand:disabled { cursor: default; opacity: 1; }
-.container:has(#lobby-screen:not(.hidden)) { max-width: 960px; justify-content: flex-start; }
-.lobby-categories { margin-block: 28px; }
-.lobby-categories .hint { text-align: start; margin-bottom: 0; }
-.lobby-categories .section-heading { align-items: baseline; flex-wrap: wrap; gap: 8px; }
-.category-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 20px; }
-.category-card { position: relative; width: 100%; aspect-ratio: 4 / 3.25; padding: 0; overflow: hidden; isolation: isolate; border: 5px solid var(--surface); border-radius: 20px; background: var(--surface); color: var(--text); cursor: pointer; outline: 1px solid var(--border); }
-.category-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.category-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.category-name { position: absolute; right: -1px; bottom: -1px; max-width: 94%; padding: 10px 16px 4px 18px; border-top-left-radius: 18px; background: var(--surface); font-size: clamp(18px, 2.2vw, 24px); font-weight: 700; line-height: 1.6; overflow-wrap: anywhere; text-align: right; }
-.category-check { position: absolute; top: 10px; right: 10px; display: grid; place-items: center; width: 25px; height: 25px; border: 2px solid #fff; border-radius: 50%; background: rgb(15 23 42 / 22%); color: white; font-family: var(--font-arabic); font-size: 18px; font-weight: 700; line-height: 1; }
-.category-card[aria-pressed="true"] { outline: 2px solid var(--accent); }
+
+/* An open lobby: invitation, people, then the game choices. */
+.container:has(#lobby-screen:not(.hidden)) { max-width: 1000px; justify-content: flex-start; }
+#lobby-screen .screen-heading { margin-bottom: 28px; }
+#lobby-screen .screen-heading h1 { font-size: clamp(30px, 4vw, 42px); }
+#lobby-screen .screen-heading p { margin-top: 10px; font-size: 15px; }
+.lobby-invite { width: 100%; max-width: 400px; margin: 0 auto 40px; padding: 20px 24px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
+.lobby-invite .room-share { flex-wrap: wrap; gap: 16px; }
+.lobby-invite .small-label { font-size: 13px; }
+.lobby-invite .room-code { margin-top: 4px; font-size: 30px; letter-spacing: 4px; }
+.lobby-invite #copy-code { gap: 8px; min-height: 44px; padding: 12px 14px; font-size: 14px; background: var(--surface-muted); border-color: transparent; }
+#copy-code svg { flex: 0 0 18px; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.lobby-layout { display: grid; gap: 40px; }
+.lobby-layout > section { min-width: 0; }
+#lobby-screen .section-heading { justify-content: flex-start; gap: 10px; margin-bottom: 20px; }
+#lobby-screen :is(.section-heading h2, .lobby-scoring h2) { font-size: 22px; font-weight: 700; line-height: 1.5; }
+#lobby-screen .count-badge { min-width: 26px; padding: 3px 8px; border-radius: 20px; }
+
+/* Names wrap naturally instead of becoming a grid of nested panels. */
+#lobby-screen .players { display: flex; flex-wrap: wrap; gap: 10px; }
+#lobby-screen .player { flex: 0 1 auto; min-width: 0; max-width: 100%; min-height: 44px; justify-content: flex-start; gap: 10px; padding: 10px 16px; border: 0; border-radius: 24px; background: var(--surface-muted); }
+#lobby-screen .player-name { max-width: 100%; font-size: 16px; line-height: 1.5; }
+#lobby-screen .host { font-size: 11px; padding: 3px 7px; background: var(--surface); color: var(--muted); border-radius: 12px; }
+.lobby-categories .hint { text-align: start; margin: -8px 0 20px; line-height: 1.8; }
+.lobby-categories #category-count { margin-top: 20px; font-size: 14px; line-height: 1.8; }
+.category-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.category-card { position: relative; display: flex; flex-direction: column; width: 100%; padding: 0; overflow: hidden; isolation: isolate; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--text); cursor: pointer; outline: 2px solid transparent; outline-offset: 2px; }
+.category-card img { display: block; width: 100%; aspect-ratio: 4 / 3; height: auto; object-fit: cover; }
+.category-name { display: block; width: 100%; margin-block: auto; padding: 16px 10px; font-size: 18px; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; text-align: center; }
+.category-check { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 26px; height: 26px; border: 2px solid #fff; border-radius: 50%; background: rgb(15 23 42 / 30%); color: white; font-family: var(--font-arabic); font-size: 17px; font-weight: 700; line-height: 1; }
+.category-card[aria-pressed="true"] { border-color: var(--accent); outline-color: var(--accent); background: var(--selected); }
 .category-card[aria-pressed="true"] .category-check { border-color: var(--accent); background: var(--accent); color: #18191b; }
 .category-card:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; }
 .category-card:disabled { cursor: default; }
-.category-card:disabled img { filter: brightness(.8) saturate(.65); }
-.lobby-settings .lobby-actions { margin-top: 24px; }
-.lobby-settings select { max-width: 100%; }
+
+/* One quiet footer for scoring and starting; no extra enclosing cards. */
+.lobby-settings { display: grid; gap: 28px; padding-top: 32px; border-top: 1px solid var(--border); }
+.lobby-scoring label { margin: 14px 0 10px; font-size: 15px; font-weight: 500; line-height: 1.7; }
+.lobby-settings select { max-width: 100%; min-height: 54px; background: var(--surface); }
+.lobby-settings .helper-message { font-size: 13px; line-height: 1.8; }
+.lobby-settings .lobby-actions { margin-top: 0; }
+.lobby-settings #host-message { margin-bottom: 16px; font-size: 14px; line-height: 1.8; }
+.lobby-settings #start-button { min-height: 56px; font-size: 18px; }
+.lobby-settings #leave-button { margin-top: 10px; font-size: 14px; }
+.lobby-settings #lobby-error:not(:empty) { margin-bottom: 12px; }
 .category-card, .category-check { transition: outline-color 160ms ease, background-color 160ms ease, border-color 160ms ease; }
-.category-card img { transition: transform 240ms var(--ease-ui), filter 160ms ease; }
+.category-card img { transition: transform 240ms var(--ease-ui); }
 @media (hover: hover) and (pointer: fine) {
     .category-card:hover:not(:disabled) img { transform: scale(1.025); }
-    .category-card:hover:not(:disabled):not([aria-pressed="true"]) { outline-color: var(--muted); }
+    .category-card:hover:not(:disabled):not([aria-pressed="true"]) { border-color: var(--muted); }
 }
 @media (prefers-reduced-motion: reduce) {
     .category-card, .category-check, .category-card img { transition: none; }
     .category-card:hover:not(:disabled) img { transform: none; }
 }
 @media (min-width: 700px) {
-    .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-    .category-card { border-width: 6px; border-radius: 24px; }
-    .category-check { width: 30px; height: 30px; top: 14px; right: 14px; }
-    .category-name { padding: 12px 20px 5px 24px; border-top-left-radius: 22px; }
+    #lobby-screen .screen-heading { margin-bottom: 32px; }
+    .lobby-invite { margin-bottom: 48px; }
+    .lobby-layout { gap: 48px; }
+    .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+    .category-name { padding: 18px 12px; font-size: 20px; }
+    .lobby-settings { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; align-items: center; padding-top: 36px; }
 }
 @media (max-width: 359px) {
-    .category-grid { gap: 10px; }
-    .category-card { border-width: 4px; border-radius: 20px; }
-    .category-name { font-size: 17px; padding: 7px 9px 2px 12px; }
+    .lobby-invite { padding: 18px; }
+    .lobby-invite .room-share { gap: 12px; }
+    .lobby-invite #copy-code { padding-inline: 10px; font-size: 12px; }
+    .category-grid { gap: 12px; }
+    .category-name { padding: 14px 8px; font-size: 16px; }
+    #lobby-screen .player { padding: 10px 12px; }
 }

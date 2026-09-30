@@ -70,7 +70,7 @@
 .admin-subsection { margin-top: 24px; padding-top: 6px; border-top: 1px solid var(--border); }
 .admin-tabs button { transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease; }
 .admin-tab-panel:not(.hidden) { animation: content-in 180ms ease; }
-.developer-login { animation: surface-in 240ms var(--ease-ui); }
+.developer-login { animation: surface-in 360ms var(--ease-page); }
 .admin-question:focus-within, .admin-category:focus-within { border-color: var(--muted); }
 @media (prefers-reduced-motion: reduce) {
     .admin-tabs button { transition: none; }

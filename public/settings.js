@@ -18,10 +18,15 @@
     function closeMenu() {
         if (closingMenu) return closingMenu;
         if (!menu.open) return Promise.resolve();
+        // Continue from the current position if the user closes before entry finishes.
+        menu.style.setProperty('--menu-close-from', getComputedStyle(menu).transform);
+        menu.style.setProperty('--menu-backdrop-from', getComputedStyle(menu, '::backdrop').opacity);
         menu.classList.add('is-closing');
         closingMenu = Promise.all(menu.getAnimations().map(animation => animation.finished.catch(() => {}))).then(() => {
             menu.close();
             menu.classList.remove('is-closing');
+            menu.style.removeProperty('--menu-close-from');
+            menu.style.removeProperty('--menu-backdrop-from');
             menuToggle.setAttribute('aria-expanded', 'false');
             closingMenu = null;
         });

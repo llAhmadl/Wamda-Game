@@ -1,0 +1,30 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const express = require('express');
+const http = require('node:http');
+const { securityHeaders } = require('../lib/security-headers');
+
+for (const production of [false, true]) test(`security headers preserve local resources; production=${production}`, async t => {
+    const app = express();
+    app.disable('x-powered-by');
+    app.use(securityHeaders({ NODE_ENV: production ? 'production' : 'development' }));
+    app.get('/', (_, res) => res.send('ok'));
+    const server = http.createServer(app);
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    t.after(() => new Promise(resolve => server.close(resolve)));
+    const host = `127.0.0.1:${server.address().port}`;
+    const response = await fetch(`http://${host}/`, { headers: { 'X-Forwarded-Host': 'attacker.example' } });
+    const h = response.headers, csp = h.get('content-security-policy');
+    assert.equal(h.get('x-powered-by'), null);
+    assert.equal(h.get('x-content-type-options'), 'nosniff');
+    assert.equal(h.get('x-frame-options'), 'SAMEORIGIN');
+    assert.match(csp, /script-src 'self';/);
+    assert.match(csp, /style-src 'self';/);
+    assert.match(csp, /font-src 'self';/);
+    assert.match(csp, /img-src 'self' blob:/);
+    assert.ok(csp.includes(`${production ? 'wss' : 'ws'}://${host}`));
+    assert.ok(!csp.includes('attacker.example'));
+    assert.ok(!csp.includes('unsafe-inline') && !csp.includes('unsafe-eval'));
+    assert.equal(csp.includes('upgrade-insecure-requests'), production);
+    assert.equal(h.has('strict-transport-security'), production);
+});

@@ -5,9 +5,15 @@ const { Server } = require("socket.io");
 const { installMultiplayer, QUESTIONS_PER_ROUND, TOTAL_ROUNDS, DURATION } = require("./lib/multiplayer");
 const { version: siteVersion } = require("./package.json");
 
+const { securityHeaders } = require("./lib/security-headers");
 const app = express();
+app.disable('x-powered-by');
+const headers = securityHeaders();
+app.use(headers);
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 2 * 1024 * 1024 + 64 * 1024 });
+
+io.engine.use(headers);
 
 const PORT = Number(process.env.PORT ?? 3000);
 

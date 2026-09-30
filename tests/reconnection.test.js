@@ -460,3 +460,18 @@ test('room, player and retained-session capacity cannot be bypassed; reconnect s
     assert.equal((await request(restored, 'leaveRoom')).ok, true);
     assert.equal((await request(third, 'joinRoom', { code, name: 'لاعب' })).ok, true);
 });
+
+
+test('all player name entry points sanitize before storing and broadcasting', async t => {
+    const f = await setup(t), host = await f.connect(), guest = await f.connect();
+    const created = await request(host, 'createRoom', { name: '\u202eأحمد\u200b  علي\u2069' });
+    assert.equal(created.ok, true);
+    assert.equal((await snapshot(host)).players[0].name, 'أحمد علي');
+    assert.equal((await request(guest, 'joinRoom', { code: created.code, name: '  خالد\n\t حسن\u200f ' })).ok, true);
+    assert.equal((await snapshot(host)).players[1].name, 'خالد حسن');
+    assert.equal((await request(guest, 'changeName', { name: 'مشعل\u0000\u2066' })).name, 'مشعل');
+    for (const event of ['createRoom', 'joinRoom', 'changeName']) {
+        assert.equal((await request(guest, event, { code: created.code, name: '\u200b١٢٣\u202e' })).ok, false);
+        assert.equal((await snapshot(host)).players[1].name, 'مشعل');
+    }
+});

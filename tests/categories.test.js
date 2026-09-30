@@ -101,3 +101,23 @@ test('concurrent legacy migration reloads winner and remains writable; local ima
  const id=image.split('/').pop().replace('.webp','');
  assert.deepEqual(await restarted.readCategoryImage(id),await local.readCategoryImage(id));
 });
+
+test('image decoder enforces pixel limits and MIME, strips metadata and re-encodes supported types', async t => {
+ const dir = await mkdtemp(path.join(os.tmpdir(), 'wamda-image-security-'));
+ const store = createQuestionStore({ required: 20, env: { BANKS_FILE: path.join(dir, 'banks.json') } });
+ t.after(async () => { await store.close(); await rm(dir, { recursive: true, force: true }); });
+ await store.init();
+ const oversized = await sharp({ create: { width: 2001, height: 2000, channels: 3, background: '#fff' } }).png().toBuffer();
+ await assert.rejects(store.uploadCategoryImage({ data: oversized, type: 'image/png' }), /4 ملايين/);
+ for (const [format, type] of [['png', 'image/png'], ['jpeg', 'image/jpeg'], ['webp', 'image/webp']]) {
+  const data = await sharp({ create: { width: 1000, height: 800, channels: 3, background: '#123456' } })
+   .withMetadata({ orientation: 1 }).toFormat(format).toBuffer();
+  const result = await store.uploadCategoryImage({ data, type });
+  const id = path.basename(result.image, '.webp');
+  const meta = await sharp(await store.readCategoryImage(id)).metadata();
+  assert.equal(meta.format, 'webp');
+  assert.ok(meta.width <= 960 && meta.height <= 720);
+  assert.equal(meta.exif, undefined);
+  await assert.rejects(store.uploadCategoryImage({ data, type: type === 'image/png' ? 'image/jpeg' : 'image/png' }), /غير صالحة/);
+ }
+});

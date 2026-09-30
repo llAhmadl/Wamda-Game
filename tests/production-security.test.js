@@ -12,7 +12,7 @@ const ask = (s, event, payload = {}) => new Promise((resolve, reject) => s.timeo
 test('production entry point composes security headers, origins, sessions and image upload', { timeout: 10000 }, async t => {
     const dir = await mkdtemp(path.join(os.tmpdir(), 'wamda-production-')), clients = [];
     const proc = spawn(process.execPath, ['server.js'], { cwd: path.join(__dirname, '..'),
-        env: { ...process.env, NODE_ENV: 'production', PORT: '0', ADMIN_CODE: 'test-only-production-code',
+        env: { ...process.env, NODE_ENV: 'production', PORT: '0', ADMIN_CODE: 'test-code-12',
             ALLOWED_ORIGINS: 'https://wamda.test', TRUST_PROXY: 'false', DATABASE_URL: '', RENDER: '', BANKS_FILE: path.join(dir, 'banks.json') },
         stdio: ['ignore', 'pipe', 'pipe'] });
     t.after(async () => {
@@ -41,7 +41,7 @@ test('production entry point composes security headers, origins, sessions and im
     const s = await connect('https://wamda.test', true);
     assert.equal((await ask(s, 'changeName', { name: 'أحمد\u202e' })).name, 'أحمد');
     assert.equal((await ask(s, 'createRoom', { name: 'أحمد' })).ok, true);
-    assert.equal((await ask(s, 'adminLogin', { code: 'test-only-production-code' })).ok, true);
+    assert.equal((await ask(s, 'adminLogin', { code: 'test-code-12' })).ok, true);
     const data = await sharp({ create: { width: 32, height: 32, channels: 3, background: '#fff' } }).png().toBuffer();
     const uploaded = await ask(s, 'adminUploadCategoryImage', { data, type: 'image/png' });
     assert.equal(uploaded.ok, true);

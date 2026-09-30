@@ -5,7 +5,7 @@ const path = require('node:path');
 const { validateAdminConfig } = require('../lib/security-config');
 
 test('production refuses a missing or weak admin secret before listening or connecting to storage', () => {
-    for (const code of ['', 'short-test-code', ' '.repeat(16), 'a'.repeat(257)]) {
+    for (const code of ['', 'a'.repeat(11), ' '.repeat(12), ' ' + 'a'.repeat(11) + ' ', 'a'.repeat(257)]) {
         const result = spawnSync(process.execPath, ['server.js'], {
             cwd: path.join(__dirname, '..'), timeout: 5000,
             env: { ...process.env, NODE_ENV: 'production', ADMIN_CODE: code, DATABASE_URL: '', PORT: '0' }, encoding: 'utf8'
@@ -17,7 +17,9 @@ test('production refuses a missing or weak admin secret before listening or conn
     }
 });
 
-test('development may disable admin and a 16-character production secret is accepted', () => {
+test('development may disable admin and 12-to-256-character production secrets are accepted', () => {
     assert.doesNotThrow(() => validateAdminConfig({}));
-    assert.doesNotThrow(() => validateAdminConfig({ NODE_ENV: 'production', ADMIN_CODE: 'test-only-code-16' }));
+    for (const length of [12, 16, 256]) {
+        assert.doesNotThrow(() => validateAdminConfig({ NODE_ENV: 'production', ADMIN_CODE: 'a'.repeat(length) }));
+    }
 });

@@ -10,9 +10,12 @@ const { configureClientIp } = require("./lib/client-ip");
 const app = express();
 const { validateAdminConfig } = require('./lib/security-config');
 const { createOriginCheck, socketOriginOptions } = require('./lib/socket-origin');
-let clientIp, allowedOrigin;
+const { readLimits } = require('./lib/limits');
+const { createConnectionGate } = require('./lib/connection-limits');
+let clientIp, allowedOrigin, limits;
 try {
     validateAdminConfig();
+    limits = readLimits();
     clientIp = configureClientIp(app);
     allowedOrigin = createOriginCheck(process.env, () => server.address()?.port || Number(process.env.PORT || 3000));
 } catch (error) {
@@ -23,7 +26,20 @@ app.disable('x-powered-by');
 const headers = securityHeaders();
 app.use(headers);
 const server = http.createServer(app);
-const io = new Server(server, { ...socketOriginOptions(allowedOrigin), maxHttpBufferSize: 2 * 1024 * 1024 + 64 * 1024 });
+const gate = createConnectionGate(limits, clientIp);
+const originOptions = socketOriginOptions(allowedOrigin);
+const io = new Server(server, {
+    ...originOptions,
+    allowRequest(req, callback) {
+        originOptions.allowRequest(req, (error, allowed) => {
+            if (!allowed) return callback(error, false);
+            gate.allowRequest(req, callback);
+        });
+    },
+    connectTimeout: limits.handshakeTimeoutMs,
+    maxHttpBufferSize: 2 * 1024 * 1024 + 64 * 1024
+});
+gate.install(io.engine);
 
 io.engine.use(headers);
 io.engine.use((req, res, next) => {
@@ -72,7 +88,7 @@ installCategoryImages(app, questionStore);
 
 const rooms = new Map();
 
-const { sendLobby } = installMultiplayer(io, rooms, questionStore);
+const { sendLobby } = installMultiplayer(io, rooms, questionStore, { limits });
 
 installAdmin(io, rooms, questionStore, {
     onChanged() {

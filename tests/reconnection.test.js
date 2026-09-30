@@ -15,7 +15,7 @@ function event(socket, name) {
 const request = (socket, name, data = {}) => new Promise((resolve, reject) =>
     socket.timeout(3000).emit(name, data, (error, response) => error ? reject(error) : resolve(response)));
 
-async function setup(t) {
+async function setup(t, options = {}) {
     let clock = 100000, sequence = 0;
     const timers = new Map(), rooms = new Map(), clients = [];
     const httpServer = http.createServer();
@@ -26,6 +26,7 @@ async function setup(t) {
         gameQuestions: () => Array.from({ length: 20 }, (_, i) => ({ question: `سؤال ${i}`, choices: ['أ', 'ب', 'ج', 'د'], correct: 0, categoryId: 'test' }))
     };
     installMultiplayer(io, rooms, store, {
+        ...options,
         now: () => clock,
         schedule: (fn, ms) => { const id = ++sequence; timers.set(id, { fn, at: clock + ms }); return id; },
         cancel: id => timers.delete(id)
@@ -439,4 +440,23 @@ test('progress broadcasts only new winners, excludes outsiders and secrets, surv
     assert.equal(model.winners.length, 2, 'A small room does not need seven winners to finish on timeout');
     assert.equal([...model.players.values()].reduce((sum, player) => sum + player.score, 0), 2);
     assert.deepEqual((await snapshot(late)).question.winners, updates[1].winners);
+});
+
+
+test('room, player and retained-session capacity cannot be bypassed; reconnect still works at capacity', async t => {
+    const { readLimits } = require('../lib/limits');
+    const f = await setup(t, { limits: { ...readLimits({}), rooms: 1, playersPerRoom: 2, sessions: 3 } });
+    const { group: [host, guest], code, model } = await f.room(2);
+    const third = await f.connect();
+    assert.match((await request(third, 'createRoom', { name: 'لاعب' })).message, /الغرف/);
+    assert.match((await request(third, 'joinRoom', { code, name: 'لاعب' })).message, /مكتملة/);
+    assert.equal(model.players.size, 2);
+    assert.equal((await request(host, 'createRoom', { name: 'المضيف' })).code, code);
+    await f.disconnect(guest);
+    const restored = await f.connect(guest.session);
+    assert.equal(restored.state.players.length, 2);
+    const extra = f.raw(), denied = event(extra, 'connect_error');
+    extra.connect(); assert.match((await denied).message, /مشغول/); extra.disconnect();
+    assert.equal((await request(restored, 'leaveRoom')).ok, true);
+    assert.equal((await request(third, 'joinRoom', { code, name: 'لاعب' })).ok, true);
 });

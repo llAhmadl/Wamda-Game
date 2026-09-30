@@ -9,10 +9,12 @@ const { securityHeaders } = require("./lib/security-headers");
 const { configureClientIp } = require("./lib/client-ip");
 const app = express();
 const { validateAdminConfig } = require('./lib/security-config');
-let clientIp;
+const { createOriginCheck, socketOriginOptions } = require('./lib/socket-origin');
+let clientIp, allowedOrigin;
 try {
     validateAdminConfig();
     clientIp = configureClientIp(app);
+    allowedOrigin = createOriginCheck(process.env, () => server.address()?.port || Number(process.env.PORT || 3000));
 } catch (error) {
     console.error(`[Startup] ${error.message}`);
     process.exit(1);
@@ -21,9 +23,13 @@ app.disable('x-powered-by');
 const headers = securityHeaders();
 app.use(headers);
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 2 * 1024 * 1024 + 64 * 1024 });
+const io = new Server(server, { ...socketOriginOptions(allowedOrigin), maxHttpBufferSize: 2 * 1024 * 1024 + 64 * 1024 });
 
 io.engine.use(headers);
+io.engine.use((req, res, next) => {
+    if (!allowedOrigin(req.headers.origin)) return next(new Error('مصدر الاتصال غير مسموح.'));
+    next();
+});
 io.engine.use((req, res, next) => { req.clientIp = clientIp(req); next(); });
 io.use((socket, next) => { socket.data.clientIp = socket.request.clientIp; next(); });
 

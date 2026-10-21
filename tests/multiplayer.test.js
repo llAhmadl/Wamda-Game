@@ -92,7 +92,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
     const scoresExpected = new Map([[host.playerId, 0], [guest.playerId, 0]]);
     for (let round = 0; round < 20; round++) {
         const [a, b] = await questions;
-        const correct=defaults.find(q=>q.question===a.question).correct;
+        const stored=defaults.find(q=>q.question===a.question), correct=a.choices.indexOf(stored.choices[stored.correct]);
         assert.ok(!seen.has(a.question));seen.add(a.question);
         assert.deepEqual(a, b, "Both clients receive the same question");
         assert.equal(a.number, round % 10 + 1);
@@ -169,7 +169,8 @@ test("two real clients: all questions, scores, host transfer and question timeou
     const firstData=await first;
     assert.equal(firstData.number, 1);
     const closed = await nextEvent(guest, "questionClosed", () => true, 23000);
-    assert.equal(closed.correctIndex, defaults.find(q=>q.question===firstData.question).correct);
+    const stored=defaults.find(q=>q.question===firstData.question);
+    assert.equal(firstData.choices[closed.correctIndex], stored.choices[stored.correct]);
     let lateResult = false;
     guest.on("answerResult", () => { lateResult = true; });
     guest.emit("submitAnswer", { code: fresh.code, gameId: firstData.gameId, questionId: 0, answerIndex: 1 });

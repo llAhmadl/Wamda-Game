@@ -48,7 +48,7 @@ test('first 1/3/5/7 races, wrong and repeated answers, authorization, live catal
    const q=await next;assert.ok(!seen.has(q.question));seen.add(q.question);
    assert.deepEqual(q.winners,[],'Every new question starts with an empty dashboard');
    assert.equal(q.round,Math.floor(index/10)+1);assert.equal(q.number,index%10+1);
-   const answer=defaults.find(x=>x.question===q.question).correct;
+   const stored=defaults.find(x=>x.question===q.question),answer=q.choices.indexOf(stored.choices[stored.correct]);
    if(index===0){
     for(const action of ['leaveRoom','createRoom','joinRoom'])assert.equal((await request(host,action,{code:room,name:'تغيير'})).ok,false);
     assert.equal((await request(host,'updateRoomSettings',{code:room,categoryIds:['legacy'],scoringMode:1})).ok,false);

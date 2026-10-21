@@ -59,6 +59,13 @@ app.get("/api/site", (req, res) => {
     res.json({ version: siteVersion });
 });
 
+// Render health check: answers without touching the database so a slow
+// Supabase never marks a running game server unhealthy.
+app.get("/healthz", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json({ ok: true });
+});
+
 app.get("/api/version", (req, res) => {
     res.set("Cache-Control", "no-store");
     res.json({ version: siteVersion, rounds: TOTAL_ROUNDS, questionsPerRound: QUESTIONS_PER_ROUND, duration: DURATION });

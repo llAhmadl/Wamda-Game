@@ -31,7 +31,7 @@ test('production entry point composes security headers, origins, sessions and im
     assert.equal(response.headers.get('x-powered-by'), null);
     assert.match(response.headers.get('strict-transport-security'), /max-age=31536000/);
     assert.match(response.headers.get('content-security-policy'), /connect-src 'self' wss:\/\/localhost:/);
-    for (const pathname of ['/developer', '/theme.js', '/socket.io/socket.io.js', '/fonts/Tajawal-Regular.ttf']) assert.equal((await fetch(url + pathname)).status, 200);
+    for (const pathname of ['/developer', '/theme.js', '/socket.io/socket.io.js', '/fonts/Tajawal-Regular.ttf', '/fonts/Tajawal-Regular.woff2']) assert.equal((await fetch(url + pathname)).status, 200);
     async function connect(origin, expected) {
         const s = io(url, { transports: ['websocket'], reconnection: false, extraHeaders: { Origin: origin } }); clients.push(s);
         const result = await new Promise(resolve => { s.once('sessionState', data => resolve(data)); s.once('connect_error', () => resolve(null)); });

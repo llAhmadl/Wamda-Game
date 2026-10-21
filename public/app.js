@@ -250,6 +250,7 @@ function synchronize(afterSync) {
         if (error || !data?.ok) { syncRetry = setTimeout(() => synchronize(afterSync), 1000); return; }
         applyState(data);
         finishRecovery();
+        joinInvite();
         if (typeof afterSync === "function") afterSync();
     });
 }
@@ -274,6 +275,7 @@ socket.on("sessionState", data => {
     storeSession(data.session);
     applyState(data);
     finishRecovery();
+    joinInvite();
 });
 socket.on("sessionReplaced", () => {
     replaced = true; connectionReady = false; connectionEpoch++;
@@ -367,6 +369,7 @@ function enterHome() {
         playerName;
 
     showScreen("home");
+    joinInvite();
 }
 
 playButton.addEventListener(
@@ -388,40 +391,28 @@ nameInput.addEventListener(
 // Create Room
 // -------------------------
 
-createButton.addEventListener(
-    "click",
-    () => {
+// Create and join share one guarded request: a lost reply (sleeping server,
+// dropped network) re-enables the buttons instead of leaving them stuck.
+let roomRequestPending = false;
+function requestRoom(event, data, onError) {
+    if (roomRequestPending || !isConnected()) return;
+    roomRequestPending = true;
+    createButton.disabled = joinButton.disabled = true;
+    socket.timeout(10000).emit(event, data, (error, response) => {
+        roomRequestPending = false;
+        createButton.disabled = joinButton.disabled = false;
+        if (error) { homeError.textContent = "تعذر الوصول للخادم. حاول مرة أخرى."; return; }
+        if (!response?.ok) { onError(response?.message || "تعذر إكمال الطلب. حاول مرة أخرى."); return; }
+        currentRoom = response.code;
+        roomCodeText.textContent = currentRoom;
+        showScreen("lobby");
+    });
+}
 
-        if (!isConnected()) return;
-
-        clearRoomCodeError();
-
-        socket.emit(
-            "createRoom",
-            {
-                name: playerName
-            },
-            response => {
-
-                if (!response.ok) {
-
-                    homeError.textContent =
-                        response.message;
-
-                    return;
-                }
-
-                currentRoom =
-                    response.code;
-
-                roomCodeText.textContent =
-                    currentRoom;
-
-                showScreen("lobby");
-            }
-        );
-    }
-);
+createButton.addEventListener("click", () => {
+    clearRoomCodeError();
+    requestRoom("createRoom", { name: playerName }, message => { homeError.textContent = message; });
+});
 
 // -------------------------
 // Join Room
@@ -460,48 +451,22 @@ function showRoomCodeError(message) {
 roomCodeInput.addEventListener("input", clearRoomCodeError);
 
 function joinRoom() {
-
-    if (!isConnected()) return;
-
     clearRoomCodeError();
+    const code = roomCodeInput.value.trim().toUpperCase();
+    if (!code) { showRoomCodeError(roomCodePlaceholder); return; }
+    requestRoom("joinRoom", { name: playerName, code }, showRoomCodeError);
+}
 
-    const code =
-        roomCodeInput
-            .value
-            .trim()
-            .toUpperCase();
-
-    if (!code) {
-
-        showRoomCodeError(roomCodePlaceholder);
-
-        return;
-    }
-
-    socket.emit(
-        "joinRoom",
-        {
-            name: playerName,
-            code
-        },
-        response => {
-
-            if (!response.ok) {
-
-                showRoomCodeError("رمز الغرفة غير صحيح");
-
-                return;
-            }
-
-            currentRoom =
-                response.code;
-
-            roomCodeText.textContent =
-                currentRoom;
-
-            showScreen("lobby");
-        }
-    );
+// An invite link (/?room=CODE) fills the code and joins once the player has a name.
+let inviteCode = /[?&]room=([A-Za-z0-9]{5})(?:&|$)/.exec(window.location.search || "")?.[1]?.toUpperCase() || null;
+function joinInvite() {
+    if (!inviteCode || !playerName || !socket.connected || !connectionReady || isDeveloperPage()) return;
+    const code = inviteCode;
+    inviteCode = null;
+    try { window.history?.replaceState(null, "", "/"); } catch { /* The code still works without a clean URL. */ }
+    if (currentRoom) return;
+    roomCodeInput.value = code;
+    joinRoom();
 }
 
 // -------------------------
@@ -986,6 +951,21 @@ copyCodeButton.addEventListener("click", async () => {
         copyMessage.textContent = "تم نسخ رمز الغرفة.";
     } catch {
         copyMessage.textContent = "تعذر النسخ. حدّد الرمز أعلاه وانسخه يدويًا.";
+    }
+});
+
+document.getElementById("share-invite").addEventListener("click", async () => {
+    if (!currentRoom) return;
+    const url = `${window.location.origin}/?room=${currentRoom}`;
+    try {
+        if (navigator.share) {
+            await navigator.share({ title: "وَمْضة", text: `انضم لغرفتي في وَمْضة — الرمز ${currentRoom}`, url });
+            return;
+        }
+        await navigator.clipboard.writeText(url);
+        copyMessage.textContent = "تم نسخ رابط الدعوة.";
+    } catch (error) {
+        if (error?.name !== "AbortError") copyMessage.textContent = "تعذرت المشاركة. انسخ الرمز وأرسله يدويًا.";
     }
 });
 

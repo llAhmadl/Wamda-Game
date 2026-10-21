@@ -59,6 +59,13 @@ app.get("/api/site", (req, res) => {
     res.json({ version: siteVersion });
 });
 
+// Render health check: answers without touching the database so a slow
+// Supabase never marks a running game server unhealthy.
+app.get("/healthz", (req, res) => {
+    res.set("Cache-Control", "no-store");
+    res.json({ ok: true });
+});
+
 app.get("/api/version", (req, res) => {
     res.set("Cache-Control", "no-store");
     res.json({ version: siteVersion, rounds: TOTAL_ROUNDS, questionsPerRound: QUESTIONS_PER_ROUND, duration: DURATION });
@@ -71,7 +78,7 @@ app.get("/developer", (req, res) => {
 });
 app.get("/favicon.png", (req, res) => res.sendFile(path.join(__dirname, "favicon.png")));
 app.use(express.static(path.join(__dirname, "public"), {
-    setHeaders(res, filename) { res.set("Cache-Control", /\.(webp|svg|ttf)$/.test(filename) ? "public, max-age=3600" : "no-store"); }
+    setHeaders(res, filename) { res.set("Cache-Control", /\.(webp|svg|ttf|woff2)$/.test(filename) ? "public, max-age=3600" : "no-store"); }
 }));
 
 // -------------------------

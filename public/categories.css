@@ -8,10 +8,11 @@
 #lobby-screen .screen-heading p { margin-top: 10px; font-size: 15px; }
 .lobby-invite { width: 100%; max-width: 400px; margin: 0 auto 40px; padding: 20px 24px; border: 1px solid var(--border); border-radius: 18px; background: var(--surface); }
 .lobby-invite .room-share { flex-wrap: wrap; gap: 16px; }
+.lobby-invite .room-share > div { flex: 1 1 auto; }
 .lobby-invite .small-label { font-size: 13px; }
 .lobby-invite .room-code { margin-top: 4px; font-size: 30px; letter-spacing: 4px; }
-.lobby-invite #copy-code { gap: 8px; min-height: 44px; padding: 12px 14px; font-size: 14px; background: var(--surface-muted); border-color: transparent; }
-#copy-code svg { flex: 0 0 18px; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.lobby-invite :is(#copy-code, #share-invite) { gap: 8px; min-height: 44px; padding: 12px 14px; font-size: 14px; background: var(--surface-muted); border-color: transparent; }
+:is(#copy-code, #share-invite) svg { flex: 0 0 18px; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .lobby-layout { display: grid; gap: 40px; }
 .lobby-layout > section { min-width: 0; }
 #lobby-screen .section-heading { justify-content: flex-start; gap: 10px; margin-bottom: 20px; }
@@ -66,7 +67,7 @@
 @media (max-width: 359px) {
     .lobby-invite { padding: 18px; }
     .lobby-invite .room-share { gap: 12px; }
-    .lobby-invite #copy-code { padding-inline: 10px; font-size: 12px; }
+    .lobby-invite :is(#copy-code, #share-invite) { padding-inline: 10px; font-size: 12px; }
     .category-grid { gap: 12px; }
     .category-name { padding: 14px 8px; font-size: 16px; }
     #lobby-screen .player { padding: 10px 12px; }

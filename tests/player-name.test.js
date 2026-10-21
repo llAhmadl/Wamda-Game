@@ -17,3 +17,11 @@ test('names remove controls, bidi overrides, invisibles and normalize whitespace
     assert.equal(cleanPlayerName({ name: 'أحمد' }), '');
     assert.equal(cleanPlayerName('ع'.repeat(2049)), '');
 });
+
+test('browser name validation matches the server for every edge case', () => {
+    const browser = require('../public/name-validation').cleanPlayerName;
+    for (const value of ['أحمد', '  مشعل  ', '​أحمد‮', '١٢٣', '1 ٢ ۳', '​'.repeat(20) + 'أحمد',
+        'ع'.repeat(19) + '😀', 'ع'.repeat(25), '\u0000', 'a  b', 'ع'.repeat(2049), '', null, 42]) {
+        assert.equal(browser(value), cleanPlayerName(value), JSON.stringify(value));
+    }
+});

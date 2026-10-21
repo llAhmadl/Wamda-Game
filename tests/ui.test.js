@@ -51,7 +51,7 @@ class Element {
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
 }
 
-function setup({ saved = null, dark = false, blockedStorage = false, clipboardFails = false, reducedMotion = false, session = null } = {}) {
+function setup({ saved = null, dark = false, blockedStorage = false, clipboardFails = false, reducedMotion = false, session = null, search = "" } = {}) {
     const elements = new Map();
     for (const match of html.matchAll(/<([\w-]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
         const element = new Element(match[1]);
@@ -78,7 +78,9 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     document.querySelectorAll = selector => selector === "body > header, body > main, body > dialog" ? pageRegions : selector === 'dialog[open]' ? [...elements.values()].filter(element => element.tagName === 'dialog' && element.open) : [];
     const window = new Element("window");
     let reloads = 0;
-    window.location = { reload() { reloads++; } };
+    window.location = { search, origin: "https://wamda.test", reload() { reloads++; } };
+    const urls = [];
+    window.history = { replaceState(state, title, url) { urls.push(url); } };
     const system = new Element("media");
     system.matches = dark;
     window.matchMedia = query => query.includes("reduced-motion") ? { matches: reducedMotion } : system;
@@ -100,7 +102,7 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
             return { emit: (event, data, callback) => {
                 this.sent.push({ event, data });
                 if (this.defer) this.pending.push(callback);
-                else callback(null, this.replies[event] || { ok: true });
+                else callback(null, this.replies[event] || { ok: true, ...(["createRoom", "joinRoom"].includes(event) ? { code: data?.code || "ABCDE" } : {}) });
             } };
         },
         receive(event, data) {
@@ -131,7 +133,7 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
         for (const [id, timer] of timers) if (timer.at <= clock) { timers.delete(id); timer.callback(); }
         for (const callback of intervals.values()) callback();
     }
-    return { el, document, window, system, store, socket, context, intervals, timers, advance, meta, pageRegions, get reloads() { return reloads; }, get copied() { return copied; } };
+    return { el, document, window, system, store, socket, context, intervals, timers, advance, meta, pageRegions, urls, get reloads() { return reloads; }, get copied() { return copied; } };
 }
 
 test("light/dark toggle persists, updates its label and restores before DOM ready", async () => {
@@ -840,4 +842,42 @@ test("quick developer wake synchronization preserves the focused editor before a
     assert.equal(editor.value, "مسودة أثناء مزامنة الاتصال");
     assert.equal(ui.el("developer-title").focused, undefined);
     assert.equal(ui.el("connection-overlay").classList.contains("hidden"), true);
+});
+
+test("joining shows the server's reason and a lost reply re-enables room buttons", async () => {
+    const ui = setup();
+    ui.el("name-input").value = "أحمد";
+    await ui.el("play-button").click();
+    ui.socket.replies.joinRoom = { ok: false, message: "الغرفة مكتملة العدد." };
+    ui.el("room-code-input").value = "abcde";
+    await ui.el("join-button").click();
+    assert.equal(ui.el("room-code-input").getAttribute("placeholder"), "الغرفة مكتملة العدد.");
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+    ui.socket.defer = true;
+    await ui.el("create-button").click();
+    assert.equal(ui.el("create-button").disabled, true);
+    assert.equal(ui.el("join-button").disabled, true);
+    await ui.el("create-button").click();
+    assert.equal(ui.socket.sent.filter(m => m.event === "createRoom").length, 1, "A pending request is not sent twice");
+    ui.socket.pending.shift()(new Error("operation has timed out"));
+    assert.equal(ui.el("create-button").disabled, false);
+    assert.match(ui.el("home-error").textContent, /تعذر الوصول للخادم/);
+});
+
+test("an invite link joins its room after the name and cleans the address bar", async () => {
+    const ui = setup({ search: "?room=xk7pq" });
+    assert.equal(ui.socket.sent.some(m => m.event === "joinRoom"), false, "No join before the player has a name");
+    ui.el("name-input").value = "سارة";
+    await ui.el("play-button").click();
+    const join = ui.socket.sent.find(m => m.event === "joinRoom");
+    assert.deepEqual({ ...join.data }, { name: "سارة", code: "XK7PQ" });
+    assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
+    assert.deepEqual(ui.urls, ["/"]);
+    await ui.el("share-invite").click();
+    assert.equal(ui.copied, "https://wamda.test/?room=XK7PQ");
+    assert.match(ui.el("copy-message").textContent, /رابط الدعوة/);
+    const invalid = setup({ search: "?room=<script>" });
+    invalid.el("name-input").value = "سارة";
+    await invalid.el("play-button").click();
+    assert.equal(invalid.socket.sent.some(m => m.event === "joinRoom"), false);
 });

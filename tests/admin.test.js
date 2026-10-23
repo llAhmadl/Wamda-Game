@@ -30,7 +30,7 @@ test('admin authentication, logout, connection stats, rename, validation and rat
     assert.equal(page.headers.get('cache-control'), 'no-store');
     const markup = await page.text();
     assert.match(markup, /id="developer-page"/);
-    assert.match(markup, /id="game-main"/);
+    assert.doesNotMatch(markup, /id="game-main"/, 'Developer tools are a separate page');
     assert.equal(markup.includes(code), false, 'The public page must never embed an admin credential');
     const slash = await fetch(url + '/developer/', { redirect: 'manual' });
     assert.equal(slash.status, 308);

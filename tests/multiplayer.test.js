@@ -47,7 +47,7 @@ test("two real clients: all questions, scores, host transfer and question timeou
         });
     });
 
-    for (const file of ["/", "/style.css", "/theme.js", "/name-validation.js", "/app.js", "/settings.js", "/favicon.png", "/categories.css", "/images/categories/islamic.webp", "/socket.io/socket.io.js"]) {
+    for (const file of ["/", "/style.css", "/theme.js", "/name-validation.js", "/game/core.js", "/game/play.js", "/settings.js", "/developer", "/developer-boot.js", "/favicon.png", "/categories.css", "/images/categories/islamic.webp", "/socket.io/socket.io.js"]) {
         const response = await fetch(baseUrl + file);
         assert.equal(response.status, 200, file);
     }

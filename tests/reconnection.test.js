@@ -543,3 +543,44 @@ test('host controls: kick (online and offline), promote, and mid-match quit are 
     assert.equal((await request(a, 'quitMatch')).ok, true);
     assert.equal(f.rooms.has(code), false, 'An empty room is removed with its timers');
 });
+
+test('host picks a 15 or 20 second question, and play again restarts the same room after the final results', async t => {
+    const f = await setup(t);
+    const { group: [host, guest], code, model } = await f.room(2, 1);
+    const settings = extra => request(host, 'updateRoomSettings', { code, categoryIds: ['test'], scoringMode: 1, ...extra });
+    assert.equal((await settings({ duration: 10 })).ok, false);
+    assert.equal((await request(guest, 'updateRoomSettings', { code, categoryIds: ['test'], scoringMode: 1, duration: 15 })).ok, false);
+    assert.equal((await settings({ duration: 15 })).ok, true);
+    assert.equal((await snapshot(guest)).duration, 15);
+    assert.equal((await settings({})).ok, true, 'Omitting duration keeps the current one');
+    assert.equal(model.duration, 15);
+    assert.equal((await request(host, 'playAgain', { code })).ok, false, 'Only after the final results');
+
+    let q = await f.start(host, code);
+    assert.equal(q.duration, 15);
+    assert.equal(q.remainingMs, 15000);
+    const gameId = q.gameId;
+    for (let index = 0; index < 20; index++) {
+        await answer(guest, code, q, 0);
+        const next = index === 19 ? event(host, 'gameOver') : index === 9 ? event(host, 'roundOver') : event(host, 'question');
+        host.emit('nextQuestion', { code, gameId, questionId: index });
+        q = await next;
+        if (index === 9) { const second = event(host, 'question'); host.emit('nextRound', { code, gameId, round: 1 }); q = await second; }
+    }
+    assert.equal(model.phase, 'finished');
+    assert.equal(q.ranking.find(p => p.id === guest.session.playerId).score, 20);
+    assert.equal((await request(guest, 'playAgain', { code })).ok, false, 'Guests cannot restart');
+
+    const lobby = event(guest, 'lobbyUpdate');
+    assert.equal((await request(host, 'playAgain', { code })).ok, true);
+    const update = await lobby;
+    assert.equal(update.phase, 'lobby');
+    assert.equal(update.players.length, 2, 'Everyone stays in the room');
+    assert.ok(update.players.every(p => p.score === 0));
+    assert.equal(update.duration, 15, 'Settings are kept');
+    const restarted = event(host, 'question');
+    assert.equal((await request(host, 'startGame', { code, gameId: update.gameId })).ok, true, 'A new game starts from the same lobby');
+    const first = await restarted;
+    assert.equal(first.number, 1);
+    assert.notEqual(first.gameId, gameId);
+});

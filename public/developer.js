@@ -4,9 +4,10 @@
     const pageSize = 12;
     let session = false, model = null, generation = 0;
     let editing = null, editingCategory = null, categoryImage = '', categoryPreviewUrl = null;
+    let questionImage = '', questionPreviewUrl = null;
     let polling = null, statsPending = false, busy = false, refreshing = false, page = 0;
     let renameDirty = false;
-    const visible = () => window.WamdaNavigation.isDeveloperPage() && document.visibilityState !== 'hidden';
+    const visible = () => (window.WamdaNavigation?.isDeveloperPage() ?? true) && document.visibilityState !== 'hidden';
     const message = value => { el('developer-message').textContent = value; };
     const stale = () => Object.assign(Error('انتهت جلسة الإدارة.'), { stale: true });
     const current = version => { if (version !== generation) throw stale(); };
@@ -50,8 +51,18 @@
         });
     });
     function stopPolling() { clearInterval(polling); polling = null; }
+    // Question pictures reuse the uploaded-image store; the saved value is its path.
+    function previewQuestionImage(source = '') {
+        if (questionPreviewUrl) URL.revokeObjectURL(questionPreviewUrl);
+        questionPreviewUrl = null;
+        const preview = el('question-preview');
+        if (source instanceof Blob) { questionPreviewUrl = URL.createObjectURL(source); source = questionPreviewUrl; }
+        if (source) { preview.src = source; preview.classList.remove('hidden'); }
+        else { preview.removeAttribute('src'); preview.classList.add('hidden'); }
+        el('remove-question-image').classList.toggle('hidden', !source);
+    }
     function resetEditor() {
-        editing = null; el('question-form').reset();
+        editing = null; questionImage = ''; el('question-form').reset(); previewQuestionImage();
         el('question-editor-title').textContent = 'إضافة سؤال';
         el('cancel-edit').classList.add('hidden');
     }
@@ -169,7 +180,7 @@
         const list = el('bank-questions'); list.textContent = '';
         questions.slice(page * pageSize, (page + 1) * pageSize).forEach(question => {
             const row = node('article', '', 'admin-question');
-            row.append(node('p', model.categories.find(item => item.id === question.categoryId)?.name || 'غير محدد', 'admin-question-category'), node('p', question.question, 'admin-question-text'), node('p', `الإجابة: ${question.choices[question.correct]}`, 'helper-message'));
+            row.append(node('p', model.categories.find(item => item.id === question.categoryId)?.name || 'غير محدد', 'admin-question-category'), node('p', question.question, 'admin-question-text'), node('p', `الإجابة: ${question.choices[question.correct]}${question.image ? ' · مع صورة' : ''}`, 'helper-message'));
             const actions = node('div', '', 'admin-row-actions');
             const edit = node('button', 'تعديل', 'secondary compact-button'); edit.type = 'button'; edit.disabled = !model.writable;
             edit.addEventListener('click', () => {
@@ -177,6 +188,7 @@
                 el('edit-question').value = question.question;
                 question.choices.forEach((choice, i) => { el(`edit-choice-${i}`).value = choice; });
                 el('edit-correct').value = question.correct; el('edit-category').value = question.categoryId;
+                questionImage = question.image || ''; el('edit-image').value = ''; previewQuestionImage(questionImage);
                 el('cancel-edit').classList.remove('hidden'); el('edit-question').focus();
             });
             const remove = node('button', 'حذف', 'text-button admin-delete'); remove.type = 'button'; remove.disabled = !model.writable;
@@ -229,10 +241,13 @@
         const version = generation; busy = true; message('جارٍ الحفظ…'); el('developer-content').inert = true;
         try {
             if (imageFile) {
-                message('جارٍ رفع صورة التصنيف…'); el('category-save').textContent = 'جارٍ رفع الصورة…';
+                const forQuestion = payload.action === 'saveQuestion';
+                message(forQuestion ? 'جارٍ رفع صورة السؤال…' : 'جارٍ رفع صورة التصنيف…');
+                if (!forQuestion) el('category-save').textContent = 'جارٍ رفع الصورة…';
                 const data = await imageFile.arrayBuffer(); current(version);
                 const upload = await request('adminUploadCategoryImage', { data, type: imageFile.type }); current(version);
-                categoryImage = upload.image; payload.image = upload.image; el('category-image').value = ''; previewCategoryImage(upload.image);
+                if (forQuestion) { questionImage = upload.image; payload.question.image = upload.image; el('edit-image').value = ''; previewQuestionImage(upload.image); }
+                else { categoryImage = upload.image; payload.image = upload.image; el('category-image').value = ''; previewCategoryImage(upload.image); }
             }
             const data = await request('adminMutate', { ...payload, revision }); current(version);
             const preferred = payload.action === 'createBank' ? data.banks.at(-1).id : null;
@@ -285,6 +300,15 @@
         }
         previewCategoryImage(file); message('');
     });
+    el('edit-image').addEventListener('change', event => {
+        const file = event.target.files[0];
+        if (!file) { previewQuestionImage(questionImage); return; }
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+            event.target.value = ''; previewQuestionImage(questionImage); message('اختر صورة JPG أو PNG أو WebP لا تتجاوز 2 ميجابايت.'); return;
+        }
+        previewQuestionImage(file); message('');
+    });
+    el('remove-question-image').addEventListener('click', () => { questionImage = ''; el('edit-image').value = ''; previewQuestionImage(); });
     el('category-form').addEventListener('submit', async event => {
         event.preventDefault(); const file = el('category-image').files[0];
         if (!file && !categoryImage) { message('أضف صورة للتصنيف قبل الحفظ.'); return; }
@@ -299,7 +323,7 @@
     el('bank-form').addEventListener('submit', event => { event.preventDefault(); mutate({ action: 'createBank', name: el('bank-name').value }); });
     el('activate-bank').addEventListener('click', () => mutate({ action: 'activateBank', bankId: el('bank-select').value }));
     el('question-form').addEventListener('submit', event => {
-        event.preventDefault(); mutate({ action: 'saveQuestion', bankId: el('bank-select').value, questionId: editing, question: { question: el('edit-question').value, choices: [0,1,2,3].map(i => el(`edit-choice-${i}`).value), correct: Number(el('edit-correct').value), categoryId: el('edit-category').value } });
+        event.preventDefault(); mutate({ action: 'saveQuestion', bankId: el('bank-select').value, questionId: editing, question: { question: el('edit-question').value, choices: [0,1,2,3].map(i => el(`edit-choice-${i}`).value), correct: Number(el('edit-correct').value), categoryId: el('edit-category').value, image: questionImage } }, el('edit-image').files?.[0] || null);
     });
     el('import-bank').addEventListener('change', async event => {
         const file = event.target.files[0], bank = selectedBank(); if (!file || !bank) return;

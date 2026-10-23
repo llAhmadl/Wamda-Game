@@ -75,15 +75,15 @@
             if (!screens.name.classList.contains('hidden')) showScreen('home');
         } catch (error) { el('rename-error').textContent = error.message; }
     });
-    el('developer-button').addEventListener('click', async () => {
+    el('developer-button').addEventListener('click', () => { window.location.href = '/developer'; });
+    el('players-button').addEventListener('click', async () => {
         await closeMenu();
-        window.WamdaNavigation.openDeveloperPage();
+        openPlayersDialog();
     });
     el('quit-button').addEventListener('click', async () => {
         await closeMenu();
         requestQuitGame();
     });
-    el('developer-home').addEventListener('click', () => window.WamdaNavigation.closeDeveloperPage());
 
     // The release number has one source: package.json on the server.
     fetch('/api/site').then(response => {

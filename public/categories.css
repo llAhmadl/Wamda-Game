@@ -23,11 +23,12 @@
 #lobby-screen :is(.section-heading h2, .lobby-scoring h2) { font-size: 20px; font-weight: 700; line-height: 1.5; }
 
 #lobby-screen .players { display: flex; flex-wrap: wrap; gap: 8px; }
-#lobby-screen .player { flex: 0 1 auto; max-width: 100%; min-height: 44px; justify-content: flex-start; gap: 10px; padding: 8px 8px 8px 16px; border: 0; border-radius: var(--radius-pill); background: var(--surface-muted); animation: leader-in 320ms var(--ease-page); }
-#lobby-screen .player::before { content: ""; flex: 0 0 8px; width: 8px; height: 8px; margin-inline-start: 6px; border-radius: 50%; background: #34c759; }
-#lobby-screen .player.is-away::before { background: var(--border); }
-#lobby-screen .player.is-away .player-name { color: var(--muted); }
-#lobby-screen .player-name { font-size: 16px; line-height: 1.5; }
+.manage-players { display: grid; gap: 8px; margin-top: 16px; }
+:is(#lobby-screen, #players-dialog) .player { flex: 0 1 auto; max-width: 100%; min-height: 44px; justify-content: flex-start; gap: 10px; padding: 8px 8px 8px 16px; border: 0; border-radius: var(--radius-pill); background: var(--surface-muted); animation: leader-in 320ms var(--ease-page); }
+:is(#lobby-screen, #players-dialog) .player::before { content: ""; flex: 0 0 8px; width: 8px; height: 8px; margin-inline-start: 6px; border-radius: 50%; background: #34c759; }
+:is(#lobby-screen, #players-dialog) .player.is-away::before { background: var(--border); }
+:is(#lobby-screen, #players-dialog) .player.is-away .player-name { color: var(--muted); }
+:is(#lobby-screen, #players-dialog) .player-name { font-size: 16px; line-height: 1.5; }
 /* Host-only controls on each other player. */
 .player-actions { display: inline-flex; gap: 4px; margin-inline-start: auto; }
 .player-action { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }

@@ -24,6 +24,13 @@ Staging and production use the **same** Supabase database (`public.wamda_banks` 
 - Socket event contract (`lib/multiplayer.js`, `lib/admin.js`) is shared with the client; changing it means updating both sides and tests.
 - Limits come from env (`lib/limits.js`). Production (`NODE_ENV=production`) requires `ADMIN_CODE` (12–256 chars) and HTTPS `ALLOWED_ORIGINS`.
 
+## Client structure
+- `public/index.html` is the game only. Its scripts are ordered classic scripts in `public/game/` sharing globals:
+  `core.js` (session, connection, state, screens) → `effects.js` (sounds, confetti) → `home.js` → `lobby.js` → `play.js` → `results.js` → `shell.js`, then `settings.js` (menu).
+- `public/developer.html` is a separate page (`/developer`) with its own anonymous socket (`developer-boot.js` + `developer.js`); it must never reuse the player's session.
+- Arabic counted nouns go through `arabicCount` / `pointsText` / `questionsText` / `playersText` in `core.js`.
+- Sounds are synthesized with Web Audio (no audio files); confetti is a canvas. Both are skipped for muted players and reduced motion.
+
 ## UI conventions
 - Arabic, RTL. Tajawal only (400/500/700, self-hosted WOFF2 with TTF fallback).
 - Accent `#87BDFF` (light) / `#FF6D42` (dark), errors `#FF4D4D`. Tokens on `:root` in `public/style.css`.

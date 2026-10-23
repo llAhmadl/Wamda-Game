@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
-const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '../public/developer.html'), 'utf8');
 const code = fs.readFileSync(path.join(__dirname, '../public/developer.js'), 'utf8');
 
 // Logic-only DOM. Real layout/navigation is also exercised in a browser.

@@ -82,3 +82,30 @@ test('unavailable PostgreSQL does not stop gameplay or write to temporary storag
     assert.equal(store.snapshot().writable, false);
     await assert.rejects(store.mutate({ action: 'createBank', name: 'بنك', revision: 0 }));
 });
+
+test('questions may carry an uploaded picture; unknown or foreign paths are rejected', async t => {
+    const sharp = require('sharp');
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'wamda-image-question-'));
+    t.after(() => rm(dir, { recursive: true, force: true }));
+    const store = createQuestionStore({ required: 20, env: { BANKS_FILE: path.join(dir, 'banks.json') } });
+    await store.init();
+    const png = await sharp({ create: { width: 40, height: 30, channels: 3, background: '#87BDFF' } }).png().toBuffer();
+    const { image } = await store.uploadCategoryImage({ data: png, type: 'image/png' });
+    let state = store.snapshot();
+    const question = (text, picture) => ({ question: text, choices: ['الرياض', 'جدة', 'مكة', 'الدمام'], correct: 0, categoryId: 'legacy', image: picture });
+    const save = async payload => { state = await store.mutate({ action: 'saveQuestion', bankId: 'default', revision: state.revision, question: payload }); return state; };
+    await save(question('ما اسم هذه المدينة؟', image));
+    assert.equal(state.banks[0].questions[0].image, image);
+    await assert.rejects(save(question('صورة خارجية', 'https://example.com/a.webp')), /صورة السؤال غير صالحة/);
+    await assert.rejects(save(question('صورة غير موجودة', '/category-images/00000000-0000-4000-8000-000000000000.webp')), /ارفع صورة/);
+    // The same text with another picture is another question; without one it stays a plain question.
+    const { image: other } = await store.uploadCategoryImage({ data: png, type: 'image/png' });
+    await save(question('ما اسم هذه المدينة؟', other));
+    await save(question('سؤال بلا صورة', ''));
+    assert.equal('image' in state.banks[0].questions[0], false);
+    assert.equal(store.availableQuestionCount(['legacy']), 33);
+    let picked = null;
+    for (let game = 0; game < 200 && !picked; game++) picked = store.gameQuestions(['legacy']).find(q => q.image === image);
+    assert.ok(picked, 'Game questions keep their picture');
+    assert.equal(picked.choices[picked.correct], 'الرياض', 'Shuffled choices still point at the right answer');
+});

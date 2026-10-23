@@ -6,7 +6,9 @@ const vm = require("node:vm");
 
 const publicDir = path.join(__dirname, "../public");
 const html = fs.readFileSync(path.join(publicDir, "index.html"), "utf8");
-const appCode = fs.readFileSync(path.join(publicDir, "app.js"), "utf8");
+// The game is split into ordered classic scripts that share globals, as in index.html.
+const gameFiles = [...html.matchAll(/<script src="\/(game\/[\w-]+\.js)">/g)].map(match => match[1]);
+const gameCode = gameFiles.map(file => fs.readFileSync(path.join(publicDir, file), "utf8"));
 const themeCode = fs.readFileSync(path.join(publicDir, "theme.js"), "utf8");
 const nameCode = fs.readFileSync(path.join(publicDir, "name-validation.js"), "utf8");
 
@@ -75,7 +77,7 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     document.getElementById = id => elements.get(id) || null;
     document.createElement = tag => new Element(tag);
     document.querySelector = selector => selector === 'meta[name="theme-color"]' ? meta : null;
-    const pageRegions = [new Element("header"), el("game-main"), el("developer-page"), el("rename-dialog")];
+    const pageRegions = [new Element("header"), el("game-main"), el("rename-dialog")];
     document.querySelectorAll = selector => selector === "body > header, body > main, body > dialog" ? pageRegions : selector === 'dialog[open]' ? [...elements.values()].filter(element => element.tagName === 'dialog' && element.open) : [];
     const window = new Element("window");
     let reloads = 0;
@@ -127,7 +129,7 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     });
     vm.runInContext(themeCode, context);
     vm.runInContext(nameCode, context);
-    vm.runInContext(appCode, context);
+    for (const code of gameCode) vm.runInContext(code, context);
     socket.receive("sessionState", { session: session || { playerId: "host", reconnectToken: "test-token" }, state: null });
     function advance(ms) {
         clock += ms;
@@ -317,10 +319,10 @@ test("first round counts from alphabetical zeros to ranked scores and cancels wh
     assert.ok(rows().every(row => row.children[2].textContent === "0 نقطة"));
     for (let i = 0; i < 12; i++) tick();
     assert.deepEqual(rows().map(row => row.children[1].textContent), ["أحمد", "خالد", "علي"], "Keep rows still while counting");
-    assert.deepEqual(rows().map(row => row.children[2].textContent), ["0 نقطة", "1 نقطة", "2 نقطة"]);
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["0 نقطة", "نقطة واحدة", "نقطتان"]);
     for (let i = 0; i < 3; i++) tick();
     assert.deepEqual(rows().map(row => row.children[1].textContent), ["علي", "خالد", "أحمد"]);
-    assert.deepEqual(rows().map(row => row.children[2].textContent), ["2 نقطة", "1 نقطة", "0 نقطة"]);
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["نقطتان", "نقطة واحدة", "0 نقطة"]);
     assert.equal(ui.intervals.size, 0);
     ui.socket.receive("roundOver", { round: 1, ranking });
     ui.socket.receive("question", { questionId: 5, round: 2, rounds: 3, number: 1, total: 5, question: "سؤال", choices: ["أ", "ب"], duration: 20 });
@@ -447,20 +449,16 @@ test("home controls preserve acknowledged room exit and prevent leaving an activ
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"] }));
     ui.socket.receive("question", { questionId: 0, round: 1, rounds: 2, number: 1, total: 10, question: "سؤال", choices: ["أ", "ب"], duration: 20 });
     const sent = ui.socket.sent.length;
-    assert.equal(ui.el("developer-home").disabled, false, "Returning from developer tools must not leave the match");
     await ui.el("home-button").fire("click");
     vm.runInContext("returnHome()", ui.context);
     assert.equal(ui.socket.sent.length, sent);
     assert.equal(ui.el("game-screen").classList.contains("hidden"), false);
     ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: true, reason: "quota", winners: [{ id: "host", awardedPoints: 1 }] });
     assert.equal(ui.el("answer-message").textContent, "إجابة صحيحة! +1 نقطة");
-    assert.equal(ui.el("developer-home").disabled, false, "Returning from developer tools must not leave the match");
     ui.socket.receive("roundOver", { round: 1, ranking: [{ name: "أحمد", score: 2 }] });
-    assert.equal(ui.el("developer-home").disabled, false, "Returning from developer tools must not leave the match");
     await ui.el("home-button").fire("click");
     assert.equal(ui.socket.sent.length, sent);
     ui.socket.receive("gameOver", { ranking: [{ name: "أحمد", score: 2 }] });
-    assert.equal(ui.el("developer-home").disabled, false);
     await ui.el("home-button").click();
     assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
 });
@@ -758,10 +756,10 @@ test("final results count up from round-one scores so overtakes animate", () => 
     ui.socket.receive("gameOver", { round: 2, ranking: [{ id: "b", name: "سارة", score: 9 }, { id: "a", name: "علي", score: 6 }] });
     const rows = () => ui.el("results-list").children;
     assert.deepEqual(rows().map(row => row.children[1].textContent), ["علي", "سارة"], "Start from the round-one order");
-    assert.deepEqual(rows().map(row => row.children[2].textContent), ["5 نقطة", "2 نقطة"]);
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["5 نقاط", "نقطتان"]);
     for (let i = 0; i < 25; i++) ui.advance(100);
     assert.deepEqual(rows().map(row => row.children[1].textContent), ["سارة", "علي"], "The overtake reorders at the end");
-    assert.deepEqual(rows().map(row => row.children[2].textContent), ["9 نقطة", "6 نقطة"]);
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["9 نقاط", "6 نقاط"]);
 });
 
 
@@ -815,47 +813,6 @@ test("answer board restores all four quotas and accepted names from server snaps
 });
 
 
-test("developer page keeps incoming game updates in the background and the brand returns without leaving", async () => {
-    const ui = setup();
-    let developer = true;
-    ui.window.WamdaNavigation = { isDeveloperPage: () => developer, closeDeveloperPage() { developer = false; } };
-    let scrolls = 0;
-    ui.window.scrollTo = () => scrolls++;
-    const state = recoveryState();
-    restore(ui, state);
-    assert.equal(scrolls, 0, "Snapshot must not scroll the developer workspace");
-    assert.equal(ui.el("question-text").focused, undefined);
-    ui.socket.receive("question", { ...state.question, questionId: 7, number: 8 });
-    assert.equal(scrolls, 0);
-    assert.match(ui.el("question-number").textContent, /سؤال 8/);
-    ui.socket.receive("roundOver", { round: 1, ranking: [{ name: "أحمد", score: 3 }] });
-    assert.equal(scrolls, 0);
-    assert.equal(ui.intervals.size, 0, "Do not animate hidden results");
-    await ui.el("home-logo").click();
-    assert.equal(developer, false);
-    assert.equal(ui.socket.sent.length, 0);
-    assert.equal(ui.reloads, 0);
-    assert.equal(ui.store.has("wamda-session-v1"), true);
-});
-
-
-test("quick developer wake synchronization preserves the focused editor before an overlay is needed", async () => {
-    const ui = setup();
-    ui.window.WamdaNavigation = { isDeveloperPage: () => true };
-    const editor = ui.el("edit-question");
-    editor.value = "مسودة أثناء مزامنة الاتصال";
-    editor.isConnected = true;
-    editor.closest = () => null;
-    ui.document.activeElement = editor;
-    ui.document.visibilityState = "visible";
-    ui.socket.replies.syncState = { ok: true, name: "أحمد", state: null };
-    await ui.document.fire("visibilitychange");
-    assert.equal(editor.focused, true);
-    assert.equal(editor.value, "مسودة أثناء مزامنة الاتصال");
-    assert.equal(ui.el("developer-title").focused, undefined);
-    assert.equal(ui.el("connection-overlay").classList.contains("hidden"), true);
-});
-
 test("joining shows the server's reason and a lost reply re-enables room buttons", async () => {
     const ui = setup();
     ui.el("name-input").value = "أحمد";
@@ -892,4 +849,102 @@ test("an invite link joins its room after the name and cleans the address bar", 
     invalid.el("name-input").value = "سارة";
     await invalid.el("play-button").click();
     assert.equal(invalid.socket.sent.some(m => m.event === "joinRoom"), false);
+});
+
+test("lobby counts use correct Arabic number agreement", () => {
+    const ui = setup();
+    const text = state => { ui.socket.receive("lobbyUpdate", categoryLobby(state)); return ui.el("category-count").textContent; };
+    assert.match(text({ selectedCategoryIds: [], availableQuestionCount: 0 }), /^لم تختر أي قسم · لا توجد أسئلة متاحة/);
+    assert.match(text({ selectedCategoryIds: ["science"], availableQuestionCount: 1 }), /^قسم واحد محدد · سؤال واحد متاح/);
+    assert.match(text({ selectedCategoryIds: ["science", "history"], availableQuestionCount: 2 }), /^قسمان محددان · سؤالان متاحان/);
+    assert.match(text({ selectedCategoryIds: ["science"], availableQuestionCount: 7 }), /7 أسئلة متاحة/);
+    assert.match(text({ selectedCategoryIds: ["science"], availableQuestionCount: 21 }), /21 سؤالًا متاحًا/);
+    assert.equal(vm.runInContext("[0, 1, 2, 3, 10, 11, 103].map(pointsText).join('|')", ui.context), "0 نقطة|نقطة واحدة|نقطتان|3 نقاط|10 نقاط|11 نقطة|103 نقاط");
+});
+
+test("a closed question shows that it ended instead of a frozen second", () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    assert.equal(ui.el("timer").parentElement.dataset.state, "open");
+    ui.socket.receive("questionClosed", { correctIndex: 1, lastInRound: false, reason: "winner", winner: { id: "guest", name: "علي" } });
+    assert.equal(ui.el("timer").parentElement.dataset.state, "closed");
+    ui.socket.receive("question", { ...recoveryState().question, questionId: 7 });
+    assert.equal(ui.el("timer").parentElement.dataset.state, "open");
+});
+
+test("answer board crowns the first place and gives every other place its own color", () => {
+    const ui = setup();
+    const state = recoveryState({ scoringMode: 5 });
+    state.question.scoringMode = 5;
+    restore(ui, state);
+    ui.socket.receive("answerProgress", { gameId: state.gameId, questionId: 6, scoringMode: 5,
+        winners: [{ id: "a", name: "سارة" }, { id: "host", name: "أحمد" }, { id: "c", name: "فهد" }] });
+    const rows = ui.el("answer-leaders").children;
+    assert.deepEqual(rows.map(row => row.classList.contains("place-1") ? 1 : row.classList.contains("place-2") ? 2 : row.classList.contains("place-3") ? 3 : 0), [1, 2, 3, 0, 0]);
+    assert.ok(rows[1].classList.contains("is-me"));
+    assert.deepEqual(rows.map(row => row.children[0].textContent), ["1", "2", "3", "4", "5"]);
+});
+
+test("question pictures show only for questions that have one", () => {
+    const ui = setup();
+    restore(ui, recoveryState({ question: { ...recoveryState().question, image: "/category-images/x.webp" } }));
+    assert.ok(!ui.el("question-image").classList.contains("hidden"));
+    assert.equal(ui.el("question-image").src, "/category-images/x.webp");
+    ui.socket.receive("question", { ...recoveryState().question, questionId: 7 });
+    assert.ok(ui.el("question-image").classList.contains("hidden"));
+});
+
+test("host chooses 15 or 20 seconds; the choice is sent with the other settings", async () => {
+    const ui = setup();
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"], scoringMode: 3, duration: 20 }));
+    ui.el("duration-mode").value = "15";
+    await ui.el("duration-mode").fire("change", { target: { value: "15" } });
+    assert.deepEqual({ ...ui.socket.sent.at(-1).data }, { code: "ABCDE", categoryIds: ["science"], scoringMode: 3, duration: 15 });
+    const guest = setup({ session: { playerId: "guest", reconnectToken: "t" } });
+    guest.socket.receive("lobbyUpdate", categoryLobby({ duration: 15 }));
+    assert.equal(guest.el("duration-mode").disabled, true);
+    assert.equal(guest.el("duration-mode").value, "15");
+});
+
+test("sound toggle is remembered and works without audio support", async () => {
+    const ui = setup();
+    assert.equal(ui.el("sound-label").textContent, "إيقاف الأصوات");
+    await ui.el("sound-toggle").click();
+    assert.equal(ui.store.get("wamda-sound"), "off");
+    assert.equal(ui.el("sound-toggle").getAttribute("aria-pressed"), "false");
+    assert.equal(ui.el("sound-label").textContent, "تشغيل الأصوات");
+    ui.socket.receive("answerResult", { correct: true, correctIndex: 0 });
+});
+
+test("the host manages players from the menu during a match", async () => {
+    const ui = setup();
+    restore(ui, recoveryState({ players: [{ id: "host", name: "أحمد", connected: true }, { id: "guest", name: "سارة", connected: true }] }));
+    assert.ok(!ui.el("players-button").classList.contains("hidden"));
+    vm.runInContext("openPlayersDialog()", ui.context);
+    assert.equal(ui.el("players-dialog").open, true);
+    const [, guestRow] = ui.el("players-manage").children;
+    const asked = guestRow.querySelector(".player-actions").children[1].click();
+    await ui.el("confirm-accept").click(); await asked;
+    assert.equal(ui.socket.sent.at(-1).event, "kickPlayer");
+    const guest = setup({ session: { playerId: "guest", reconnectToken: "t" } });
+    guest.socket.receive("lobbyUpdate", categoryLobby());
+    assert.ok(guest.el("players-button").classList.contains("hidden"), "Only the host sees player management");
+});
+
+test("play again: the host restarts from the final results and everyone returns to the lobby", async () => {
+    const host = setup();
+    host.socket.receive("lobbyUpdate", categoryLobby({ phase: "finished" }));
+    host.socket.receive("gameOver", { round: 2, ranking: [{ id: "host", name: "أحمد", score: 0 }] });
+    assert.ok(!host.el("play-again-button").classList.contains("hidden"));
+    await host.el("play-again-button").click();
+    assert.deepEqual({ event: host.socket.sent.at(-1).event, ...host.socket.sent.at(-1).data }, { event: "playAgain", code: "ABCDE" });
+    host.socket.receive("lobbyUpdate", categoryLobby({ phase: "lobby" }));
+    assert.ok(!host.el("lobby-screen").classList.contains("hidden"));
+    const guest = setup({ session: { playerId: "guest", reconnectToken: "t" } });
+    guest.socket.receive("lobbyUpdate", categoryLobby({ phase: "finished" }));
+    guest.socket.receive("gameOver", { round: 2, ranking: [{ id: "guest", name: "سارة", score: 0 }] });
+    assert.ok(guest.el("play-again-button").classList.contains("hidden"), "Guests wait for the host");
+    assert.match(guest.el("round-message").textContent, /مباراة جديدة/);
+    guest.socket.receive("lobbyUpdate", categoryLobby({ phase: "lobby" }));
+    assert.ok(!guest.el("lobby-screen").classList.contains("hidden"));
 });

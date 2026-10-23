@@ -13,12 +13,6 @@
     <link rel="stylesheet" href="/categories-admin.css">
 </head>
 <body>
-    <div class="ambient-background" aria-hidden="true">
-        <span class="ambient-orb orb-blue"></span>
-        <span class="ambient-orb orb-yellow"></span>
-        <span class="ambient-orb orb-red"></span>
-        <span class="ambient-orb orb-green"></span>
-    </div>
     <header class="site-header">
         <div class="header-inner">
             <button id="menu-toggle" class="menu-toggle" type="button" aria-label="فتح القائمة" aria-haspopup="dialog" aria-controls="site-menu" aria-expanded="false">
@@ -123,6 +117,7 @@
 
         <section id="game-screen" class="screen hidden" aria-labelledby="question-text">
             <div class="panel question-panel">
+                <div class="timer-track" aria-hidden="true"><span id="timer-bar"></span></div>
                 <div class="game-top">
                     <span id="question-number">السؤال</span>
                     <span class="timer" role="timer" aria-label="الثواني المتبقية"><span id="timer">20</span></span>

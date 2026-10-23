@@ -144,7 +144,7 @@ test("light/dark toggle persists, updates its label and restores before DOM read
     assert.equal(ui.document.documentElement.dataset.theme, "dark");
     assert.equal(ui.store.get("firsthit-theme"), "dark");
     assert.equal(ui.el("theme-label").textContent, "الوضع الفاتح");
-    assert.equal(ui.meta.content, "#1b1c1e");
+    assert.equal(ui.meta.content, "#0a0a0b");
     const reloaded = setup({ saved: "dark" });
     assert.equal(reloaded.document.documentElement.dataset.theme, "dark");
     await ui.el("theme-toggle").click();
@@ -272,7 +272,7 @@ test("static UI contracts: local fonts, reduced motion, and touch-friendly sizin
     assert.match(css, /\.choice\.is-wrong \.choice-letter/);
     assert.ok(!/https?:\/\//.test(html + css));
     assert.match(html, /width=device-width/);
-    assert.match(css, /min-height: 48px/);
+    assert.match(css, /min-height: 52px/);
     assert.match(css, /min-height: 44px/);
     assert.match(css, /font-size: 16px/);
     assert.match(css, /prefers-reduced-motion|No animation/i);
@@ -574,12 +574,11 @@ test("credentials persist privately; replaced tabs require explicit reclaim and 
 
 test("connection overlay uses theme colors, subtle blur and reduced motion", () => {
     const css = fs.readFileSync(path.join(publicDir, "style.css"), "utf8");
-    const overlay = css.slice(css.indexOf(".connection-overlay {"));
+    const overlay = css.slice(css.indexOf(".connection-overlay {"), css.indexOf(".connection-overlay.hidden"));
     assert.match(overlay, /var\(--background\)/);
-    assert.match(overlay, /backdrop-filter: blur\(2px\)/);
-    assert.match(overlay, /prefers-reduced-motion: reduce/);
-    assert.match(overlay, /animation: none/);
+    assert.match(overlay, /backdrop-filter: blur\(12px\)/);
     assert.doesNotMatch(overlay, /gradient|box-shadow|text-shadow/);
+    assert.match(css, /prefers-reduced-motion: reduce[^@]*\.connection-loader \{ animation: none/);
 });
 
 

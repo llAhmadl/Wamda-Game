@@ -559,7 +559,7 @@ function renderLobby(data) {
             const row =
                 document.createElement("div");
 
-            row.className = "player";
+            row.className = player.connected === false ? "player is-away" : "player";
 
             const name =
                 document.createElement("span");
@@ -840,6 +840,7 @@ function startTimer(data) {
         const remaining = Math.max(0, Math.ceil((endsAt - performance.now()) / 1000));
         timerElement.textContent = remaining;
         timerElement.parentElement.dataset.low = String(remaining <= 5);
+        document.getElementById("timer-bar")?.style?.setProperty("--time-left", String(Math.max(0, endsAt - performance.now()) / ((data.duration || 20) * 1000)));
         if (remaining === 0) {
             clearInterval(countdown);
             choicesContainer.querySelectorAll("button").forEach(button => { button.disabled = true; });

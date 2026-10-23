@@ -5,7 +5,7 @@ Real-time multiplayer Arabic quiz game. Express + Socket.IO + PostgreSQL (Supaba
 ## Workflow
 - `main` → production (`wamda`, https://wamda-i0c9.onrender.com). Do not touch until the owner says the site is ready.
 - `development` → staging (`wamda-staging`, https://wamda-staging.onrender.com), auto-deploys on push.
-- Work on a feature branch off `development`, merge back into `development`, test on staging.
+- Commit directly on `development`: **one commit per batch of work** with a clear name (no series of small commits, no extra merge commits). Test on staging.
 - Never commit, push, merge or deploy without the owner's explicit approval.
 - Version lives only in `package.json`: `npm version X.Y.Z --no-git-tag-version`.
 - Run `npm test` (Node 22) before every commit; all tests must pass.

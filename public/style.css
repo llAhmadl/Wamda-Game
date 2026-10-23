@@ -466,9 +466,17 @@ button:disabled { cursor: not-allowed; }
 .dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 .dialog-heading h2 { font-size: 22px; font-weight: 700; }
 .dialog-close { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-muted); color: var(--muted); font-size: 22px; line-height: 1; cursor: pointer; transition: background-color 160ms ease, transform 160ms var(--ease-ui); }
-#refresh-description { color: var(--muted); font-size: 16px; line-height: 1.8; }
-.refresh-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
-.refresh-actions button { flex: 1 1 150px; }
+#confirm-description { color: var(--muted); font-size: 16px; line-height: 1.8; }
+.confirm-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
+.confirm-actions button { flex: 1 1 150px; }
+.primary.danger { background: var(--error); color: #ffffff; }
+@media (hover: hover) { .primary.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error) 85%, #000); } }
+/* Quitting is set apart from the settings above it and reads as destructive. */
+.menu-danger { margin-top: 12px; color: var(--error); }
+.menu-danger::before { content: ""; position: absolute; inset: -7px 14px auto; border-top: 1px solid var(--border); }
+.menu-item.menu-danger { position: relative; }
+.menu-danger svg, .menu-item.menu-danger:hover svg { stroke: var(--error); }
+@media (hover: hover) { .menu-item.menu-danger:hover { background: var(--error-bg); } }
 .rules-list { display: grid; gap: 14px; margin: 4px 0 0; padding: 0; list-style: none; counter-reset: rule; font-size: 16px; line-height: 1.8; }
 .rules-list li { position: relative; padding-inline-start: 40px; counter-increment: rule; }
 .rules-list li::before { content: counter(rule); position: absolute; inset-inline-start: 0; top: 2px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-muted); color: var(--muted); font-size: 13px; font-weight: 700; line-height: 1; }

@@ -502,3 +502,44 @@ test('ordinary players cannot start or advance questions/rounds by forging host 
     assert.equal(model.players.get(guest.session.playerId).score, 1);
     assert.equal(model.players.get(host.session.playerId).score, 0);
 });
+
+test('host controls: kick (online and offline), promote, and mid-match quit are server-authorized', async t => {
+    const f = await setup(t);
+    const { group: [host, a, b, c], code, model } = await f.room(4, 1);
+    const id = s => s.session.playerId;
+    // Only the host may act, never on itself, never outside its own room.
+    assert.equal((await request(a, 'kickPlayer', { code, playerId: id(b) })).ok, false);
+    assert.equal((await request(host, 'kickPlayer', { code, playerId: id(host) })).ok, false);
+    assert.equal((await request(host, 'kickPlayer', { code: 'ZZZZZ', playerId: id(a) })).ok, false);
+    assert.equal((await request(host, 'makeHost', { code, playerId: 'missing' })).ok, false);
+
+    const kicked = event(a, 'kicked');
+    assert.equal((await request(host, 'kickPlayer', { code, playerId: id(a) })).ok, true);
+    assert.match((await kicked).message, /أخرجك المضيف/);
+    assert.equal(model.players.has(id(a)), false);
+    assert.equal(await snapshot(a), null, 'The kicked player is back home');
+    assert.equal((await request(a, 'joinRoom', { code, name: 'عائد' })).ok, true, 'A kick is not a ban');
+
+    await f.disconnect(b);
+    assert.equal((await request(host, 'makeHost', { code, playerId: id(b) })).ok, false, 'Only a connected player can host');
+    assert.equal((await request(host, 'kickPlayer', { code, playerId: id(b) })).ok, true, 'Offline players can be removed');
+    assert.equal(model.players.has(id(b)), false);
+
+    const notified = event(c, 'hostTransferred');
+    assert.equal((await request(host, 'makeHost', { code, playerId: id(c) })).ok, true);
+    await notified;
+    assert.equal(model.hostId, id(c));
+    assert.equal((await request(host, 'kickPlayer', { code, playerId: id(c) })).ok, false, 'The old host lost control');
+
+    // Quitting works mid-match, unlike leaveRoom, and the match continues for the rest.
+    await f.start(c, code);
+    assert.equal((await request(host, 'leaveRoom')).ok, false);
+    assert.equal((await request(host, 'quitMatch')).ok, true);
+    assert.equal(model.players.has(id(host)), false);
+    assert.equal(await snapshot(host), null);
+    assert.equal(model.started, true);
+    assert.equal((await request(c, 'quitMatch')).ok, true);
+    assert.equal(model.hostId, id(a), 'The host role moves to the remaining player');
+    assert.equal((await request(a, 'quitMatch')).ok, true);
+    assert.equal(f.rooms.has(code), false, 'An empty room is removed with its timers');
+});

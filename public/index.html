@@ -253,18 +253,22 @@
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 20"/></svg>
                 <span>وضع المطور</span>
             </button>
+            <button id="quit-button" class="menu-item menu-danger hidden" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10"/></svg>
+                <span>خروج من اللعبة</span>
+            </button>
         </nav>
     </dialog>
 
-    <dialog id="refresh-dialog" class="settings-dialog refresh-dialog" aria-labelledby="refresh-title" aria-describedby="refresh-description">
+    <dialog id="confirm-dialog" class="settings-dialog confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-description">
         <div class="dialog-heading">
-            <h2 id="refresh-title">تحديث الصفحة؟</h2>
-            <button id="refresh-close" class="dialog-close" type="button" aria-label="إكمال اللعب">×</button>
+            <h2 id="confirm-title">تأكيد</h2>
+            <button id="confirm-close" class="dialog-close" type="button" aria-label="إلغاء">×</button>
         </div>
-        <p id="refresh-description">هل أنت متأكد من تحديث الصفحة؟ ستعود لنفس المباراة باسمك ونقاطك. وقت السؤال يستمر أثناء التحديث.</p>
-        <div class="refresh-actions">
-            <button id="refresh-cancel" class="primary" type="button" autofocus>إكمال اللعب</button>
-            <button id="refresh-confirm" class="secondary" type="button">تحديث الصفحة</button>
+        <p id="confirm-description"></p>
+        <div class="confirm-actions">
+            <button id="confirm-cancel" class="secondary" type="button" autofocus>إلغاء</button>
+            <button id="confirm-accept" class="primary danger" type="button">تأكيد</button>
         </div>
     </dialog>
 

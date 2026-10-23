@@ -79,6 +79,10 @@
         await closeMenu();
         window.WamdaNavigation.openDeveloperPage();
     });
+    el('quit-button').addEventListener('click', async () => {
+        await closeMenu();
+        requestQuitGame();
+    });
     el('developer-home').addEventListener('click', () => window.WamdaNavigation.closeDeveloperPage());
 
     // The release number has one source: package.json on the server.

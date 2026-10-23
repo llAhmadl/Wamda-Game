@@ -28,6 +28,15 @@
 #lobby-screen .player.is-away::before { background: var(--border); }
 #lobby-screen .player.is-away .player-name { color: var(--muted); }
 #lobby-screen .player-name { font-size: 16px; line-height: 1.5; }
+/* Host-only controls on each other player. */
+.player-actions { display: inline-flex; gap: 4px; margin-inline-start: auto; }
+.player-action { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }
+.player-action svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.player-action:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (hover: hover) {
+    .player-action:hover { color: var(--text); }
+    .player-action.kick:hover { background: var(--error-bg); color: var(--error); }
+}
 
 .lobby-categories .hint { text-align: start; margin: -6px 0 16px; line-height: 1.8; }
 .lobby-categories #category-count { margin-top: 16px; }

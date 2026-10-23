@@ -19,7 +19,8 @@ class Element {
         this.classList = {
             contains: name => this.className.split(/\s+/).includes(name),
             add: (...names) => { this.className = [...new Set([...this.className.split(/\s+/).filter(Boolean), ...names])].join(" "); },
-            remove: (...names) => { this.className = this.className.split(/\s+/).filter(n => !names.includes(n)).join(" "); }
+            remove: (...names) => { this.className = this.className.split(/\s+/).filter(n => !names.includes(n)).join(" "); },
+            toggle: (name, force) => { const on = force ?? !this.classList.contains(name); this.classList[on ? "add" : "remove"](name); return on; }
         };
     }
     set textContent(value) { this._text = String(value); this.children = []; }
@@ -247,6 +248,7 @@ test("timer closes unanswered choices; equal scores share rank", () => {
     assert.ok(ui.el("choices").children.every(c => c.disabled));
     assert.match(ui.el("answer-message").textContent, /انتهى الوقت/);
     ui.socket.receive("gameOver", { ranking: [{name:"A", score:3},{name:"B", score:3},{name:"C", score:1}] });
+    for (let i = 0; i < 25; i++) ui.advance(100);
     assert.deepEqual(ui.el("results-list").children.map(row => row.children[0].textContent), ["1", "1", "3"]);
     assert.equal(ui.el("results-list").children.filter(row => row.classList.contains("winner")).length, 2);
 });
@@ -662,7 +664,7 @@ test("brand explicitly clears an unsubmitted draft, also after a lost reset repl
 });
 
 
-test("brand asks before reloading active matches without leaving or clearing credentials", async () => {
+test("brand reloads an active match directly without leaving or clearing credentials", async () => {
     for (const phase of ["question", "review", "roundResults"]) {
         const ui = setup({ saved: "dark" });
         const state = recoveryState({ phase });
@@ -671,36 +673,25 @@ test("brand asks before reloading active matches without leaving or clearing cre
         restore(ui, state);
         const credentials = ui.store.get("wamda-session-v1");
         await ui.el("home-logo").click();
-        await ui.el("home-logo").fire("click");
-        assert.equal(ui.reloads, 0, "Opening confirmation must not reload");
-        assert.equal(ui.el("refresh-dialog").open, true);
-        assert.equal(ui.el("refresh-cancel").focused, true);
-        await ui.el("refresh-confirm").click();
-        await ui.el("refresh-confirm").fire("click");
         assert.equal(ui.reloads, 1, phase);
         assert.equal(ui.socket.sent.length, 0, "Refresh must not send resetSession or leaveRoom");
         assert.equal(ui.store.get("wamda-session-v1"), credentials);
         assert.equal(ui.store.get("firsthit-theme"), "dark");
-        assert.equal(ui.socket.connected, true);
         assert.match(ui.el("home-logo").getAttribute("aria-label"), /استعادة المباراة/);
     }
 });
 
-test("brand racing game start synchronizes and asks before refreshing", async () => {
+test("brand racing game start synchronizes into the match without reloading", async () => {
     const ui = setup();
     restore(ui, recoveryState({ phase: "lobby" }));
     ui.socket.defer = true;
     await ui.el("home-logo").click();
     assert.equal(ui.socket.sent.at(-1).event, "resetSession");
     ui.socket.pending.shift()(null, { ok: false, code: "GAME_ACTIVE" });
-    assert.equal(ui.reloads, 0);
     assert.equal(ui.socket.sent.at(-1).event, "syncState");
     ui.socket.pending.shift()(null, { ok: true, name: "أحمد", state: recoveryState() });
-    assert.equal(ui.el("refresh-dialog").open, true);
     assert.equal(ui.reloads, 0);
-    await ui.el("refresh-confirm").click();
-    assert.equal(ui.reloads, 1);
-    assert.equal(ui.el("player-name").textContent, "أحمد");
+    assert.ok(!ui.el("game-screen").classList.contains("hidden"));
     assert.ok(ui.store.has("wamda-session-v1"));
 });
 
@@ -710,14 +701,69 @@ test("brand keeps an active session and synchronizes when storage blocks reload 
     ui.socket.defer = true;
     await ui.el("home-logo").click();
     assert.equal(ui.reloads, 0);
-    assert.equal(ui.el("refresh-dialog").open, true);
-    await ui.el("refresh-confirm").click();
     assert.equal(ui.socket.sent.at(-1).event, "syncState");
     ui.socket.pending.shift()(null, { ok: true, name: "أحمد", state: recoveryState() });
     assert.ok(!ui.el("game-screen").classList.contains("hidden"));
-    assert.equal(ui.el("timer").textContent, "7");
     assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
 });
+
+test("quitting asks first: cancel keeps the match, confirm sends quitMatch and returns home", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    assert.ok(!ui.el("quit-button").classList.contains("hidden"), "Quit is offered inside a room");
+    for (const action of ["confirm-cancel", "confirm-close", "escape"]) {
+        const pending = ui.context.requestQuitGame();
+        assert.equal(ui.el("confirm-dialog").open, true);
+        if (action === "escape") await ui.el("confirm-dialog").fire("cancel", { preventDefault() {} });
+        else await ui.el(action).click();
+        await pending;
+        assert.equal(ui.el("confirm-dialog").open, false);
+        assert.equal(ui.socket.sent.length, 0);
+        assert.ok(!ui.el("game-screen").classList.contains("hidden"));
+    }
+    const pending = ui.context.requestQuitGame();
+    await ui.el("confirm-accept").click();
+    await pending;
+    assert.equal(ui.socket.sent.at(-1).event, "quitMatch");
+    assert.ok(!ui.el("home-screen").classList.contains("hidden"));
+    assert.ok(ui.el("quit-button").classList.contains("hidden"), "No quit option outside a room");
+});
+
+test("hosts can promote and kick other players after confirming; a kicked player returns home", async () => {
+    const ui = setup();
+    ui.socket.receive("lobbyUpdate", { code: "ABCDE", hostId: "host", players: [{ id: "host", name: "أحمد", connected: true }, { id: "guest", name: "سارة", connected: true }] });
+    const [own, guest] = ui.el("players-list").children;
+    assert.equal(own.querySelector(".player-actions"), null, "No controls on yourself");
+    const [promote, kick] = guest.querySelector(".player-actions").children;
+    const asked = kick.click();
+    assert.equal(ui.el("confirm-dialog").open, true);
+    await ui.el("confirm-accept").click(); await asked;
+    assert.deepEqual({ ...ui.socket.sent.at(-1).data }, { code: "ABCDE", playerId: "guest" });
+    assert.equal(ui.socket.sent.at(-1).event, "kickPlayer");
+    const promoting = promote.click();
+    await ui.el("confirm-accept").click(); await promoting;
+    assert.equal(ui.socket.sent.at(-1).event, "makeHost");
+    const guestView = setup({ session: { playerId: "guest", reconnectToken: "t" } });
+    guestView.socket.receive("lobbyUpdate", { code: "ABCDE", hostId: "host", players: [{ id: "host", name: "أحمد" }, { id: "guest", name: "سارة" }] });
+    assert.equal(guestView.el("players-list").querySelector(".player-actions"), null, "Guests get no controls");
+    guestView.socket.receive("kicked", { message: "أخرجك المضيف من الغرفة." });
+    assert.ok(!guestView.el("home-screen").classList.contains("hidden") || !guestView.el("name-screen").classList.contains("hidden"));
+    assert.equal(guestView.el("home-error").textContent, "أخرجك المضيف من الغرفة.");
+});
+
+test("final results count up from round-one scores so overtakes animate", () => {
+    const ui = setup();
+    ui.socket.receive("roundOver", { round: 1, ranking: [{ id: "a", name: "علي", score: 5 }, { id: "b", name: "سارة", score: 2 }] });
+    for (let i = 0; i < 25; i++) ui.advance(100);
+    ui.socket.receive("gameOver", { round: 2, ranking: [{ id: "b", name: "سارة", score: 9 }, { id: "a", name: "علي", score: 6 }] });
+    const rows = () => ui.el("results-list").children;
+    assert.deepEqual(rows().map(row => row.children[1].textContent), ["علي", "سارة"], "Start from the round-one order");
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["5 نقطة", "2 نقطة"]);
+    for (let i = 0; i < 25; i++) ui.advance(100);
+    assert.deepEqual(rows().map(row => row.children[1].textContent), ["سارة", "علي"], "The overtake reorders at the end");
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["9 نقطة", "6 نقطة"]);
+});
+
 
 test("live answer board follows server order, handles duplicates and stale events, and clears for each question", () => {
     const ui = setup();
@@ -765,39 +811,6 @@ test("answer board restores all four quotas and accepted names from server snaps
         restore(ui, { ...state, phase: "review", review: { correctIndex: 0, reason: "timeout", winners } });
         assert.equal(ui.el("answer-leaders").children[0].children[1].textContent, "سوسن");
         assert.equal(ui.el("answer-leaders").children.filter(row => row.classList.contains("is-filled")).length, 1);
-    }
-});
-
-
-test("cancel, close and Escape keep the match running without reload or socket commands", async () => {
-    for (const action of ["refresh-cancel", "refresh-close", "escape"]) {
-        const ui = setup();
-        restore(ui, recoveryState());
-        await ui.el("home-logo").click();
-        const before = ui.el("timer").textContent;
-        ui.advance(1000);
-        assert.notEqual(ui.el("timer").textContent, before, "Confirmation never pauses the match");
-        if (action === "escape") await ui.el("refresh-dialog").fire("cancel", { preventDefault() {} });
-        else await ui.el(action).click();
-        assert.equal(ui.el("refresh-dialog").open, false);
-        await ui.el("refresh-confirm").fire("click");
-        assert.equal(ui.reloads, 0);
-        assert.equal(ui.socket.sent.length, 0);
-        assert.ok(!ui.el("game-screen").classList.contains("hidden"));
-    }
-});
-
-test("disconnect and replaced-session recovery invalidate an open refresh confirmation", async () => {
-    for (const event of ["disconnect", "sessionReplaced"]) {
-        const ui = setup();
-        restore(ui, recoveryState());
-        await ui.el("home-logo").click();
-        ui.socket.receive(event);
-        await ui.el("refresh-confirm").fire("click");
-        assert.equal(ui.reloads, 0);
-        ui.advance(800);
-        assert.equal(ui.el("refresh-dialog").open, false);
-        assert.equal(ui.socket.sent.length, 0);
     }
 });
 

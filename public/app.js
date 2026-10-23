@@ -33,6 +33,8 @@ let currentRound = 1;
 let lastInRound = false;
 let resultsAnimation = null;
 let resultMotions = [];
+// Round-one scores by player id, so the final results animate overtakes from there.
+let roundScores = null;
 let lobbySettings = { categories: [], selectedCategoryIds: [], scoringMode: 1 };
 let settingsPending = false;
 const categoryNodes = new Map();
@@ -134,11 +136,11 @@ const nextQuestionButton = document.getElementById("next-question-button");
 const nextRoundButton = document.getElementById("next-round-button");
 
 function updateControls() {
+    document.getElementById("quit-button").classList.toggle("hidden", !currentRoom);
     const logo = document.getElementById("home-logo");
     logo.disabled = homePending;
     logo.title = isDeveloperPage() ? "العودة للعبة" : isActiveGame() ? "تحديث الصفحة واستعادة المباراة" : "العودة إلى صفحة الاسم";
     logo.setAttribute("aria-label", `وَمْضة — ${logo.title}`);
-    logo.setAttribute("aria-haspopup", !isDeveloperPage() && isActiveGame() ? "dialog" : "false");
     nextQuestionButton.classList.add("hidden");
     nextRoundButton.classList.add("hidden");
     if (phase === "review" && amHost) nextQuestionButton.classList.remove("hidden");
@@ -583,6 +585,8 @@ function renderLobby(data) {
                 row.appendChild(host);
             }
 
+            if (playerId === data.hostId && player.id !== playerId) row.appendChild(playerActions(player));
+
             playersList.appendChild(row);
         });
 
@@ -613,6 +617,96 @@ function renderLobby(data) {
         }
 }
 socket.on("lobbyUpdate", renderLobby);
+
+// One confirmation dialog for every destructive action; resolves true on confirm.
+const confirmDialog = document.getElementById("confirm-dialog");
+let confirmResolve = null;
+function confirmAction(title, message, acceptLabel) {
+    if (confirmResolve) confirmResolve(false);
+    document.getElementById("confirm-title").textContent = title;
+    document.getElementById("confirm-description").textContent = message;
+    document.getElementById("confirm-accept").textContent = acceptLabel;
+    if (!confirmDialog.open) confirmDialog.showModal();
+    document.getElementById("confirm-cancel").focus();
+    return new Promise(resolve => { confirmResolve = resolve; });
+}
+function settleConfirm(value) {
+    const resolve = confirmResolve;
+    confirmResolve = null;
+    confirmDialog.close();
+    resolve?.(value);
+}
+document.getElementById("confirm-accept").addEventListener("click", () => settleConfirm(true));
+document.getElementById("confirm-cancel").addEventListener("click", () => settleConfirm(false));
+document.getElementById("confirm-close").addEventListener("click", () => settleConfirm(false));
+confirmDialog.addEventListener("cancel", event => { event.preventDefault(); settleConfirm(false); });
+
+function hostCommand(event, target) {
+    if (!amHost || !isConnected()) return;
+    document.getElementById("lobby-error").textContent = "";
+    socket.timeout(10000).emit(event, { code: currentRoom, playerId: target.id }, (error, response) => {
+        if (error || !response?.ok) document.getElementById("lobby-error").textContent = response?.message || "تعذر تنفيذ الطلب. حاول مجددًا.";
+    });
+}
+function playerActions(player) {
+    const actions = document.createElement("span");
+    actions.className = "player-actions";
+    const make = (className, label, path, onClick) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `player-action ${className}`;
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        const icon = document.createElementNS?.("http://www.w3.org/2000/svg", "svg");
+        if (icon) {
+            icon.setAttribute("viewBox", "0 0 24 24");
+            icon.setAttribute("aria-hidden", "true");
+            const shape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            shape.setAttribute("d", path);
+            icon.appendChild(shape);
+            button.appendChild(icon);
+        }
+        button.addEventListener("click", onClick);
+        actions.appendChild(button);
+    };
+    if (player.connected !== false) make("promote", `جعل ${player.name} المضيف`, "M3 8l4 4 5-7 5 7 4-4-2 11H5Z", async () => {
+        if (await confirmAction("نقل الاستضافة؟", `سيصبح ${player.name} المضيف ويتحكم بالغرفة بدلًا منك.`, "نقل الاستضافة")) hostCommand("makeHost", player);
+    });
+    make("kick", `إخراج ${player.name}`, "M6 6l12 12M18 6 6 18", async () => {
+        if (await confirmAction("إخراج اللاعب؟", `سيخرج ${player.name} من الغرفة. يستطيع العودة برمز الغرفة إذا أرسلته له.`, "إخراج")) hostCommand("kickPlayer", player);
+    });
+    return actions;
+}
+
+// Leaving locally after the server confirmed (quit, kick) returns to home.
+function clearRoom(message = "") {
+    currentRoom = ""; gameId = null; phase = "lobby"; amHost = false; settingsPending = false;
+    roundScores = null;
+    clearInterval(countdown);
+    roomCodeInput.value = "";
+    clearRoomCodeError();
+    if (confirmResolve) settleConfirm(false);
+    document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
+    document.getElementById("menu-toggle").setAttribute("aria-expanded", "false");
+    document.getElementById("host-notice").classList.add("hidden");
+    updateControls();
+    showScreen(playerName ? "home" : "name");
+    homeError.textContent = message;
+}
+socket.on("kicked", data => clearRoom(data?.message || "أخرجك المضيف من الغرفة."));
+
+async function requestQuitGame() {
+    if (!currentRoom || homePending || replaced) return;
+    const active = isActiveGame() || phase === "finished";
+    const leave = await confirmAction("الخروج من اللعبة؟",
+        active ? "ستخرج من المباراة وتفقد نقاطك فيها، وتستطيع بعدها إنشاء غرفة جديدة أو الانضمام لغيرها." : "ستغادر غرفة الانتظار.",
+        "خروج");
+    if (!leave || !currentRoom || !isConnected()) return;
+    socket.timeout(10000).emit("quitMatch", {}, (error, response) => {
+        if (!error && response?.ok) clearRoom();
+        else document.getElementById("site-error").textContent = "تعذر الخروج من اللعبة. حاول مجددًا.";
+    });
+}
 
 // -------------------------
 // Start Game
@@ -855,7 +949,8 @@ function startTimer(data) {
 // Results
 // -------------------------
 
-function showResults(data, final) {
+// Only live round endings animate; a restored snapshot shows the settled ranking.
+function showResults(data, final, live = false) {
         phase = final ? "finished" : "roundResults";
         currentRound = data.round;
         updateControls();
@@ -868,10 +963,12 @@ function showResults(data, final) {
 
         showScreen("results");
 
-        renderRanking(data.ranking, !isDeveloperPage() && data.round === 1 && !final);
+        const from = final ? roundScores : null;
+        roundScores = final ? null : new Map(data.ranking.map(player => [player.id, player.score]));
+        renderRanking(data.ranking, live && !isDeveloperPage(), from);
 }
 
-function renderRanking(ranking, animateFirstRound) {
+function renderRanking(ranking, animateScores, from = null) {
     const alphabetical = new Intl.Collator("ar", { sensitivity: "base", numeric: true });
     const entries = ranking.map(player => {
         const row = document.createElement("div");
@@ -885,10 +982,12 @@ function renderRanking(ranking, animateFirstRound) {
         row.appendChild(position);
         row.appendChild(name);
         row.appendChild(score);
-        return { player, row, position, score, displayed: 0 };
+        const start = Math.min(player.score, from?.get(player.id) ?? 0);
+        return { player, row, position, score, start, displayed: start };
     });
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const animate = animateFirstRound && !reducedMotion && entries.some(entry => entry.player.score > 0);
+    const animate = animateScores && !reducedMotion && entries.some(entry => entry.player.score > entry.start);
+    const at = (entry, progress) => entry.start + Math.floor((entry.player.score - entry.start) * progress);
     resultsList.innerHTML = "";
 
     function paint(progress, move) {
@@ -896,7 +995,7 @@ function renderRanking(ranking, animateFirstRound) {
         if (move) entries.forEach(entry => oldPositions.set(entry, entry.row.getBoundingClientRect().top));
         resultMotions.forEach(animation => animation.cancel());
         resultMotions = [];
-        entries.forEach(entry => { entry.displayed = Math.floor(entry.player.score * progress); });
+        entries.forEach(entry => { entry.displayed = at(entry, progress); });
         entries.sort((a, b) => b.displayed - a.displayed || alphabetical.compare(a.player.name, b.player.name));
         let rank = 0;
         entries.forEach((entry, index) => {
@@ -927,7 +1026,7 @@ function renderRanking(ranking, animateFirstRound) {
         if (elapsed <= 600) return;
         const progress = Math.min(1, (elapsed - 600) / 1400);
         entries.forEach(entry => {
-            entry.displayed = Math.floor(entry.player.score * progress);
+            entry.displayed = at(entry, progress);
             entry.score.textContent = `${entry.displayed} نقطة`;
             entry.position.textContent = "—";
         });
@@ -938,8 +1037,8 @@ function renderRanking(ranking, animateFirstRound) {
         }
     }, 100);
 }
-socket.on("gameOver", data => showResults(data, true));
-socket.on("roundOver", data => showResults(data, false));
+socket.on("gameOver", data => showResults(data, true, true));
+socket.on("roundOver", data => showResults(data, false, true));
 
 // -------------------------
 // Back Home
@@ -1013,32 +1112,15 @@ function refreshActiveGame() {
     window.location.reload();
 }
 
-const refreshDialog = document.getElementById("refresh-dialog");
-function requestGameRefresh() {
-    if (homePending || replaced || !connectionReady || !socket.connected || refreshDialog.open) return;
-    refreshDialog.showModal();
-    document.getElementById("refresh-cancel").focus();
-}
-function cancelGameRefresh() { refreshDialog.close(); }
-document.getElementById("refresh-cancel").addEventListener("click", cancelGameRefresh);
-document.getElementById("refresh-close").addEventListener("click", cancelGameRefresh);
-refreshDialog.addEventListener("cancel", event => {
-    event.preventDefault();
-    cancelGameRefresh();
-});
-document.getElementById("refresh-confirm").addEventListener("click", () => {
-    // Hidden/stale confirmation clicks must never reload after a lost connection.
-    if (!refreshDialog.open || homePending || replaced || !connectionReady || !socket.connected) return;
-    refreshDialog.close();
-    refreshActiveGame();
-});
-
 homeButton.addEventListener("click", returnHome);
 document.addEventListener("wamda:pagechange", updateControls);
 document.getElementById("home-logo").addEventListener("click", () => {
     if (isDeveloperPage()) { window.WamdaNavigation.closeDeveloperPage(); return; }
     if (homePending || replaced) return;
-    if (isActiveGame()) { requestGameRefresh(); return; }
+    if (isActiveGame()) {
+        if (connectionReady && socket.connected) refreshActiveGame();
+        return;
+    }
     if (!isConnected()) return;
     homePending = true;
     resetNameOnSync = true;
@@ -1053,7 +1135,7 @@ document.getElementById("home-logo").addEventListener("click", () => {
         if (epoch !== connectionEpoch) return;
         if (!error && response?.code === "GAME_ACTIVE") {
             resetNameOnSync = false;
-            synchronize(requestGameRefresh);
+            synchronize();
             return;
         }
         if (!error && response?.ok) {

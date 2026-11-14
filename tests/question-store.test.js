@@ -32,6 +32,20 @@ test('banks persist, validate, activate and preserve running game snapshots', as
     assert.equal(new Set(reloaded.gameQuestions(['legacy']).map(q=>q.id)).size,20);
 });
 
+test('a room sees unseen questions first and repeats only when the pool runs short', async () => {
+    const store = createQuestionStore({ required: 20, env: { RENDER: 'true' } });
+    await store.init();
+    // The default bank holds 30 distinct questions.
+    const first = store.gameQuestions(['legacy']);
+    const played = new Set(first.map(q => q.id));
+    const second = store.gameQuestions(['legacy'], played);
+    const fresh = second.filter(q => !played.has(q.id));
+    assert.equal(fresh.length, 10, 'All 10 unseen questions are used before any repeat');
+    assert.equal(new Set(second.map(q => q.id)).size, 20);
+    for (const q of second) played.add(q.id);
+    assert.equal(store.gameQuestions(['legacy'], played).length, 20, 'A fully seen pool still makes a game');
+});
+
 test('Render without persistent storage is read-only', async () => {
     const store = createQuestionStore({ required: 20, env: { RENDER: 'true' } });
     await store.init();

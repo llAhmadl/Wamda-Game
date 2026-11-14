@@ -3,10 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#ffffff">
+    <meta name="theme-color" content="#f5f5f7">
     <meta name="color-scheme" content="light dark">
     <title>وَمْضة</title>
     <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="preload" href="/fonts/Tajawal-Bold.woff2" as="font" type="font/woff2" crossorigin>
     <script src="/theme.js"></script>
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/categories.css">
@@ -71,12 +74,14 @@
             </div>
             <div class="lobby-invite">
                 <div class="room-share">
-                    <div>
+                    <div class="room-code-block">
                         <p class="small-label">رمز الغرفة</p>
                         <strong id="room-code" class="room-code">-----</strong>
                     </div>
-                    <button id="copy-code" class="secondary compact-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="3"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg><span>نسخ الرمز</span></button>
-                    <button id="share-invite" class="secondary compact-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg><span>رابط الدعوة</span></button>
+                    <div class="invite-actions">
+                        <button id="share-invite" class="primary compact-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg><span>رابط الدعوة</span></button>
+                        <button id="copy-code" class="secondary compact-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="3"/><path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg><span>نسخ الرمز</span></button>
+                    </div>
                 </div>
                 <p id="copy-message" class="helper-message" role="status"></p>
             </div>
@@ -110,35 +115,39 @@
                             <option value="20">20 ثانية</option>
                         </select>
                     </div>
-                    <div class="lobby-actions">
-                        <p id="host-message" class="hint">بانتظار المضيف...</p>
-                        <p id="lobby-error" class="error" role="alert"></p>
-                        <button id="start-button" class="primary full-width hidden" type="button">بدء اللعبة</button>
-                        <button id="leave-button" class="text-button full-width" type="button">مغادرة الغرفة</button>
-                    </div>
                 </section>
             </div>
+            <!-- Stays at the bottom of the screen on phones so starting never needs a scroll. -->
+            <div class="lobby-actions action-bar">
+                <p id="host-message" class="hint" role="status">بانتظار المضيف...</p>
+                <p id="lobby-error" class="error" role="alert"></p>
+                <button id="start-button" class="primary full-width hidden" type="button">بدء اللعبة</button>
+            </div>
+            <button id="leave-button" class="text-button full-width" type="button">مغادرة الغرفة</button>
         </section>
 
         <section id="game-screen" class="screen hidden" aria-labelledby="question-text">
-            <div class="panel question-panel">
-                <div class="timer-track" aria-hidden="true"><span id="timer-bar"></span></div>
+            <div id="question-panel" class="panel question-panel">
+                <!-- Sticks under the header so the timer stays visible on short screens. -->
                 <div class="game-top">
                     <span id="question-number">السؤال</span>
                     <span class="timer" role="timer" aria-label="الثواني المتبقية"><span id="timer">20</span></span>
+                    <div class="timer-track" aria-hidden="true"><span id="timer-bar"></span></div>
                 </div>
-                <img id="question-image" class="question-image hidden" alt="صورة السؤال" decoding="async">
                 <h1 id="question-text" class="question" tabindex="-1">السؤال</h1>
+                <img id="question-image" class="question-image hidden" alt="صورة السؤال" decoding="async">
                 <div id="choices" class="choices" role="group" aria-label="خيارات الإجابة"></div>
                 <p id="answer-message" class="answer-message" role="status"></p>
-                <p id="advance-message" class="helper-message" role="status"></p>
-                <button id="next-question-button" class="primary full-width field-action hidden" type="button">السؤال التالي</button>
             </div>
             <section class="answer-board" aria-labelledby="answer-board-title">
                 <h2 id="answer-board-title">أول ناس يجاوبون</h2>
                 <p>الإجابات الصحيحة · نقطة لكل لاعب</p>
                 <ol id="answer-leaders" aria-live="polite" aria-atomic="true"></ol>
             </section>
+            <div class="game-actions action-bar">
+                <p id="advance-message" class="helper-message" role="status"></p>
+                <button id="next-question-button" class="primary full-width hidden" type="button">السؤال التالي</button>
+            </div>
         </section>
 
         <section id="results-screen" class="screen hidden" aria-labelledby="results-title">

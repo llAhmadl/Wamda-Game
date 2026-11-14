@@ -49,7 +49,14 @@ function renderQuestion(data) {
     setTimerState("open");
     startTimer(data);
 }
-socket.on("question", renderQuestion);
+socket.on("question", data => { renderQuestion(data); flashQuestion(); });
+// The one signature moment: a brief light sweep across the card as a live question arrives.
+const questionPanel = el("question-panel");
+function flashQuestion() {
+    questionPanel.classList.remove("is-flashing");
+    void questionPanel.offsetWidth;
+    questionPanel.classList.add("is-flashing");
+}
 
 // Each update replaces the server-owned order; retries never append extra rows.
 // The first place wears a crown; every other winning place has its own color.
@@ -120,11 +127,12 @@ function renderReview(data) {
     });
     const selected = choicesContainer.querySelector(".selected");
     if (selected && Array.from(buttons).indexOf(selected) !== data.correctIndex) selected.classList.add("is-wrong");
+    // "+1" is wrapped in a left-to-right isolate so RTL text never shows it as "1+".
     if (data.winners?.length) {
         const earned = data.winners.find(winner => winner.id === playerId);
-        answerMessage.textContent = earned ? `إجابة صحيحة! +${earned.awardedPoints} نقطة` : `أجاب ${playersText(data.winners.length)} إجابة صحيحة.`;
+        answerMessage.textContent = earned ? `إجابة صحيحة! ⁦+${earned.awardedPoints}⁩ نقطة` : `أجاب ${playersText(data.winners.length)} إجابة صحيحة.`;
     } else if (data.winner) {
-        answerMessage.textContent = data.winner.id === playerId ? "سبقت الجميع! +1 نقطة" : `حسم ${data.winner.name} السؤال.`;
+        answerMessage.textContent = data.winner.id === playerId ? "سبقت الجميع! ⁦+1⁩ نقطة" : `حسم ${data.winner.name} السؤال.`;
     } else if (data.reason === "timeout" || !data.reason) {
         timerElement.textContent = "0";
         answerMessage.textContent = "انتهى الوقت.";
@@ -134,8 +142,16 @@ function renderReview(data) {
 // The fastest correct answer gets a confetti burst on their own screen.
 socket.on("questionClosed", data => {
     renderReview(data);
+    preloadImage(data.nextImage);
     if ((data.winners?.[0] || data.winner)?.id === playerId) celebrate();
 });
+// Loading the next picture during the review keeps it from eating into that question's time.
+function preloadImage(src) {
+    if (typeof src !== "string" || !src.startsWith("/category-images/")) return;
+    const image = document.createElement("img");
+    image.decoding = "async";
+    image.src = src;
+}
 
 function startTimer(data) {
     clearInterval(countdown);

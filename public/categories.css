@@ -3,21 +3,19 @@
 
 /* Lobby: invitation first, then players beside the categories, then the start bar. */
 .container:has(#lobby-screen:not(.hidden)) { max-width: 1040px; }
-#lobby-screen .screen-heading { margin-bottom: 32px; }
+#lobby-screen .screen-heading { margin-bottom: 24px; }
 #lobby-screen .screen-heading p { margin-top: 8px; font-size: 16px; }
 
-.lobby-invite { width: 100%; max-width: 520px; margin: 0 auto 48px; padding: 28px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); box-shadow: var(--shadow); text-align: center; }
-.lobby-invite .room-share { flex-direction: column; gap: 20px; }
-.lobby-invite .room-share > div { display: grid; justify-items: center; }
+.lobby-invite { width: 100%; max-width: 520px; margin: 0 auto 36px; padding: 24px var(--panel-pad); border: 1px solid var(--panel-border); border-radius: var(--radius-panel); background: var(--surface); box-shadow: var(--shadow); text-align: center; }
+.lobby-invite .room-share { flex-direction: column; gap: 18px; }
+.room-code-block { display: grid; justify-items: center; }
 .lobby-invite .room-code { text-align: center; }
-.lobby-invite .room-share > button { width: 100%; }
-.lobby-invite :is(#copy-code, #share-invite) { gap: 8px; }
+.invite-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; width: 100%; }
+.invite-actions button { width: 100%; gap: 8px; }
 :is(#copy-code, #share-invite) svg { flex: 0 0 18px; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.lobby-invite #share-invite { order: 1; background: var(--button); color: var(--button-text); }
-.lobby-invite #copy-code { order: 2; margin-top: -10px; }
 .lobby-invite #copy-message { margin-top: 14px; }
 
-.lobby-layout { display: grid; gap: 40px; }
+.lobby-layout { display: grid; gap: 36px; }
 .lobby-layout > section { min-width: 0; }
 #lobby-screen .section-heading { justify-content: flex-start; gap: 10px; margin-bottom: 16px; }
 #lobby-screen :is(.section-heading h2, .lobby-scoring h2) { font-size: 20px; font-weight: 700; line-height: 1.5; }
@@ -25,13 +23,15 @@
 #lobby-screen .players { display: flex; flex-wrap: wrap; gap: 8px; }
 .manage-players { display: grid; gap: 8px; margin-top: 16px; }
 :is(#lobby-screen, #players-dialog) .player { flex: 0 1 auto; max-width: 100%; min-height: 44px; justify-content: flex-start; gap: 10px; padding: 8px 8px 8px 16px; border: 0; border-radius: var(--radius-pill); background: var(--surface-muted); animation: leader-in 320ms var(--ease-page); }
+/* On the grey page the roster pills sit on white, like the cards around them. */
+#lobby-screen .player { background: var(--surface); box-shadow: var(--shadow); }
 :is(#lobby-screen, #players-dialog) .player::before { content: ""; flex: 0 0 8px; width: 8px; height: 8px; margin-inline-start: 6px; border-radius: 50%; background: #34c759; }
 :is(#lobby-screen, #players-dialog) .player.is-away::before { background: var(--border); }
 :is(#lobby-screen, #players-dialog) .player.is-away .player-name { color: var(--muted); }
 :is(#lobby-screen, #players-dialog) .player-name { font-size: 16px; line-height: 1.5; }
 /* Host-only controls on each other player. */
 .player-actions { display: inline-flex; gap: 4px; margin-inline-start: auto; }
-.player-action { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }
+.player-action { display: grid; place-items: center; width: 44px; height: 44px; margin-block: -4px; padding: 0; border: 0; border-radius: 50%; background: var(--surface); color: var(--muted); cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }
 .player-action svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .player-action:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 @media (hover: hover) {
@@ -42,9 +42,12 @@
 .lobby-categories .hint { text-align: start; margin: -6px 0 16px; line-height: 1.8; }
 .lobby-categories #category-count { margin-top: 16px; }
 .category-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.category-card { position: relative; display: flex; flex-direction: column; width: 100%; padding: 6px; overflow: hidden; isolation: isolate; border: 1.5px solid var(--border); border-radius: 20px; background: var(--surface); color: var(--text); cursor: pointer; text-align: center; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms var(--ease-ui); }
-.category-card img { display: block; width: 100%; aspect-ratio: 4 / 3; height: auto; object-fit: cover; border-radius: 14px; background: var(--surface-muted); transition: transform 320ms var(--ease-ui); }
-.category-name { display: block; width: 100%; padding: 12px 8px 8px; font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.category-card { position: relative; display: flex; flex-direction: column; width: 100%; padding: 6px; overflow: hidden; isolation: isolate; border: 1.5px solid transparent; box-shadow: var(--shadow); border-radius: 20px; background: var(--surface); color: var(--text); cursor: pointer; text-align: center; transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms var(--ease-ui); }
+.category-card img { display: block; width: 100%; aspect-ratio: 16 / 10; height: auto; object-fit: cover; border-radius: 14px; background: var(--surface-muted); transition: transform 320ms var(--ease-ui); }
+.category-name { display: block; width: 100%; padding: 10px 8px 0; font-size: 16px; font-weight: 700; line-height: 1.4; overflow-wrap: break-word; }
+.category-size { display: block; padding: 0 8px 6px; color: var(--muted); font-size: 13px; font-weight: 500; line-height: 1.6; }
+/* An empty category reads as unavailable but keeps its place in the grid. */
+.category-card.is-empty:not([aria-pressed="true"]) { opacity: .5; }
 .category-check { position: absolute; top: 14px; right: 14px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: rgb(0 0 0 / 28%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: #fff; box-shadow: inset 0 0 0 2px rgb(255 255 255 / 85%); font-size: 15px; font-weight: 700; line-height: 1; transition: background-color 160ms ease, box-shadow 160ms ease; }
 .category-card[aria-pressed="true"] { border-color: var(--accent); background: var(--selected); box-shadow: 0 0 0 3px var(--accent-soft); }
 .category-card:not([aria-pressed="true"]) .category-check { opacity: 0; transform: scale(.6); }
@@ -58,18 +61,25 @@
     .category-card:hover:not(:disabled):not([aria-pressed="true"]) { border-color: color-mix(in srgb, var(--muted) 50%, var(--border)); }
 }
 
-.lobby-settings { display: grid; gap: 24px; padding: 28px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); box-shadow: var(--shadow); }
+.lobby-settings { display: grid; gap: 24px; padding: var(--panel-pad); border: 1px solid var(--panel-border); border-radius: var(--radius-panel); background: var(--surface); box-shadow: var(--shadow); }
 .lobby-scoring label { margin: 10px 0 10px; font-size: 15px; line-height: 1.7; }
-.lobby-settings .lobby-actions { margin-top: 0; }
-.lobby-settings #host-message { margin-bottom: 14px; }
-.lobby-settings #start-button { min-height: 56px; font-size: 18px; }
-.lobby-settings #leave-button { margin-top: 6px; }
-.lobby-settings #lobby-error:not(:empty) { margin-bottom: 12px; text-align: center; }
+.lobby-actions > * { max-width: 560px; margin-inline: auto; }
+.lobby-actions #host-message { margin-bottom: 12px; }
+.lobby-actions #start-button { display: flex; min-height: 56px; font-size: 18px; }
+#lobby-screen #leave-button { display: flex; max-width: 560px; margin: 4px auto 0; }
+.lobby-actions #lobby-error:not(:empty) { margin: 0 0 12px; text-align: center; }
 
 @media (min-width: 700px) {
     .category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
     .category-name { font-size: 17px; }
-    .lobby-settings { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; align-items: center; padding: 32px; }
+    .lobby-settings { grid-template-columns: minmax(0, 1fr); }
+    .lobby-scoring { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; align-items: end; }
+    .lobby-scoring h2 { grid-column: 1 / -1; }
+    .lobby-scoring #scoring-description { grid-column: 1 / -1; grid-row: 4; }
+    .lobby-scoring label[for="scoring-mode"] { grid-column: 1; grid-row: 2; }
+    .lobby-scoring #scoring-mode { grid-column: 1; grid-row: 3; }
+    .lobby-scoring label[for="duration-mode"] { grid-column: 2; grid-row: 2; }
+    .lobby-scoring #duration-mode { grid-column: 2; grid-row: 3; }
 }
 @media (min-width: 960px) {
     .lobby-layout { grid-template-columns: 280px minmax(0, 1fr); column-gap: 56px; row-gap: 48px; align-items: start; }
@@ -79,7 +89,6 @@
     .lobby-settings { grid-column: 1 / -1; }
 }
 @media (max-width: 359px) {
-    .lobby-invite, .lobby-settings { padding: 20px; }
     .category-grid { gap: 10px; }
     .category-name { font-size: 15px; }
 }

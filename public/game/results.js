@@ -27,7 +27,7 @@ function showResults(data, final, live = false) {
     phase = final ? "finished" : "roundResults";
     currentRound = data.round;
     updateControls();
-    el("results-title").textContent = final ? "النتائج النهائية" : `نتائج الجولة ${data.round}`;
+    el("results-title").textContent = final ? "النتائج النهائية" : `نتائج الجولة ${["الأولى", "الثانية"][data.round - 1] || data.round}`;
     el("results-message").textContent = final ? "اكتملت الجولتان، شكرًا للعبكم!" : "انتهت الجولة الأولى. النقاط مستمرة في الجولة الثانية.";
     clearInterval(countdown);
     showScreen("results");

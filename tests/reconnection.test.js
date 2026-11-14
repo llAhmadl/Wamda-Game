@@ -462,6 +462,31 @@ test('room, player and retained-session capacity cannot be bypassed; reconnect s
 });
 
 
+test('connect-and-leave floods cannot lock new visitors out: abandoned rooms and idle sessions are evicted at capacity', async t => {
+    const { readLimits } = require('../lib/limits');
+    const f = await setup(t, { limits: { ...readLimits({}), rooms: 1, sessions: 3 } });
+    // An attacker fills the only room slot and leaves.
+    const attacker = await f.connect();
+    const abandonedCode = (await request(attacker, 'createRoom', { name: 'مهاجم' })).code;
+    await f.disconnect(attacker);
+    const idle = await f.connect();
+    await f.disconnect(idle);
+    // A real visitor still gets a room; the abandoned one (and its session) is gone.
+    const visitor = await f.connect();
+    const created = await request(visitor, 'createRoom', { name: 'زائر' });
+    assert.equal(created.ok, true);
+    assert.equal(f.rooms.has(abandonedCode), false);
+    // Sessions are full again (idle, visitor, other); the idle, room-less one is evicted.
+    const other = await f.connect();
+    const newcomer = await f.connect();
+    assert.ok(newcomer.session.playerId);
+    const stale = f.raw(idle.session), rejected = event(stale, 'connect_error');
+    stale.connect(); assert.equal((await rejected).data.code, 'SESSION_INVALID');
+    // Connected players and room members are never evicted.
+    assert.equal((await snapshot(visitor)).players.length, 1);
+    assert.ok(other.connected);
+});
+
 test('all player name entry points sanitize before storing and broadcasting', async t => {
     const f = await setup(t), host = await f.connect(), guest = await f.connect();
     const created = await request(host, 'createRoom', { name: '\u202eأحمد\u200b  علي\u2069' });

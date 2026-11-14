@@ -1,5 +1,5 @@
 // Lobby: room settings, the roster, host controls, confirmations and leaving.
-let lobbySettings = { categories: [], selectedCategoryIds: [], scoringMode: 1, duration: 20 };
+let lobbySettings = { categories: [], selectedCategoryIds: [], scoringMode: 1, duration: 20, requiredQuestions: 20 };
 let settingsPending = false;
 let roster = { players: [], hostId: null };
 const categoryNodes = new Map();
@@ -28,28 +28,40 @@ function renderLobbySettings() {
             check.setAttribute("aria-hidden", "true");
             const name = document.createElement("span");
             name.className = "category-name";
-            button.appendChild(image); button.appendChild(check); button.appendChild(name);
+            const size = document.createElement("span");
+            size.className = "category-size";
+            button.appendChild(image); button.appendChild(check); button.appendChild(name); button.appendChild(size);
             button.addEventListener("click", () => {
+                if (button.disabled) return;
                 const selected = lobbySettings.selectedCategoryIds;
                 changeRoomSettings({ categoryIds: selected.includes(category.id) ? selected.filter(id => id !== category.id) : [...selected, category.id] });
             });
-            node = { button, image, check, name };
+            node = { button, image, check, name, size };
             categoryNodes.set(category.id, node);
             grid.appendChild(button);
         }
         const selected = lobbySettings.selectedCategoryIds.includes(category.id);
+        const empty = !category.count;
         node.image.src = category.image || "/images/categories/placeholder.svg";
         node.name.textContent = category.name;
+        node.size.textContent = empty ? "لا توجد أسئلة" : questionsText(category.count);
         node.check.textContent = selected ? "✓" : "";
+        node.button.classList.toggle("is-empty", empty);
         node.button.setAttribute("aria-pressed", String(selected));
         node.button.setAttribute("aria-label", `${category.name} · ${questionsText(category.count || 0)}`);
-        node.button.disabled = !editable;
+        // An empty category can't help a game; it stays removable if it was already chosen.
+        node.button.disabled = !editable || (empty && !selected);
     });
     const selectedCount = lobbySettings.selectedCategoryIds.length;
+    const required = lobbySettings.requiredQuestions;
     const count = lobbySettings.availableQuestionCount ?? categories.filter(c => lobbySettings.selectedCategoryIds.includes(c.id)).reduce((sum, c) => sum + (c.count || 0), 0);
     const sections = arabicCount(selectedCount, ["قسم واحد محدد", "قسمان محددان", "أقسام محددة", "قسمًا محددًا"], "لم تختر أي قسم");
     const available = count ? `${questionsText(count)} ${count === 1 ? "متاح" : count === 2 ? "متاحان" : count % 100 >= 3 && count % 100 <= 10 ? "متاحة" : "متاحًا"}` : "لا توجد أسئلة متاحة";
-    el("category-count").textContent = `${sections} · ${available} · تحتاج المباراة 20 سؤالًا`;
+    el("category-count").textContent = `${sections} · ${available} · تحتاج المباراة ${questionsText(required)}`;
+    el("host-message").textContent = !amHost ? "بانتظار المضيف لبدء اللعبة..."
+        : !selectedCount ? "اختر قسمًا واحدًا على الأقل لتبدأ."
+        : count < required ? `الأقسام المختارة فيها ${questionsText(count)}، والمباراة تحتاج ${questionsText(required)}. أضف قسمًا آخر.`
+        : "ابدأ عندما ينضم الجميع.";
     el("category-hint").textContent = amHost ? "" : "المضيف يختار الأقسام. تظهر اختياراته هنا مباشرة.";
     const scoring = el("scoring-mode");
     scoring.value = String(lobbySettings.scoringMode);
@@ -59,7 +71,7 @@ function renderLobbySettings() {
     const duration = el("duration-mode");
     duration.value = String(lobbySettings.duration);
     duration.disabled = !editable;
-    startButton.disabled = !editable || !selectedCount;
+    startButton.disabled = !editable || !selectedCount || count < required;
 }
 
 function changeRoomSettings(changes) {
@@ -115,11 +127,10 @@ function renderLobby(data) {
     }
     if (data.phase) phase = data.phase;
     lobbySettings = { categories: data.categories || [], selectedCategoryIds: data.selectedCategoryIds || [], scoringMode: data.scoringMode || 1,
-        duration: data.duration || 20, availableQuestionCount: data.availableQuestionCount };
+        duration: data.duration || 20, availableQuestionCount: data.availableQuestionCount, requiredQuestions: data.requiredQuestions || 20 };
     renderLobbySettings();
     updateControls();
     startButton.classList.toggle("hidden", !amHost);
-    el("host-message").textContent = amHost ? "ابدأ عندما ينضم الجميع." : "بانتظار المضيف لبدء اللعبة...";
     // "Play again" brings everyone from the final results back to this lobby.
     if (returningToLobby) showScreen("lobby");
 }

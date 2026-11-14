@@ -47,6 +47,21 @@ io.engine.use((req, res, next) => {
     next();
 });
 io.engine.use((req, res, next) => { req.clientIp = clientIp(req); next(); });
+// Without proxy trust on Render every player shares the proxy's address, so per-IP
+// limits apply site-wide. Log only the hop count of a few handshakes, never an address,
+// to choose TRUST_PROXY from real traffic.
+if (process.env.RENDER && ['', 'false', '0'].includes((process.env.TRUST_PROXY || '').trim())) {
+    console.warn('[Proxy] TRUST_PROXY is not set on Render: per-IP limits see one shared proxy address.');
+    let samples = 3;
+    io.engine.use((req, res, next) => {
+        if (samples > 0 && !req._query?.sid) {
+            samples--;
+            const hops = (req.headers['x-forwarded-for'] || '').split(',').filter(Boolean).length;
+            console.info(`[Proxy] X-Forwarded-For hops on a new connection: ${hops}`);
+        }
+        next();
+    });
+}
 io.use((socket, next) => { socket.data.clientIp = socket.request.clientIp; next(); });
 
 const { installSocketProtection } = require('./lib/socket-protection');

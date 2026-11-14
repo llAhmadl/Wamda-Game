@@ -147,7 +147,7 @@ test("light/dark toggle persists, updates its label and restores before DOM read
     assert.equal(ui.document.documentElement.dataset.theme, "dark");
     assert.equal(ui.store.get("firsthit-theme"), "dark");
     assert.equal(ui.el("theme-label").textContent, "الوضع الفاتح");
-    assert.equal(ui.meta.content, "#0a0a0b");
+    assert.equal(ui.meta.content, "#000000");
     const reloaded = setup({ saved: "dark" });
     assert.equal(reloaded.document.documentElement.dataset.theme, "dark");
     await ui.el("theme-toggle").click();
@@ -377,11 +377,14 @@ test("category cards and scoring update only from server snapshots, support mult
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"] }));
     assert.equal(cards[0].getAttribute("aria-pressed"), "true");
     assert.equal(cards[0].children[1].textContent, "✓");
-    assert.equal(ui.el("start-button").disabled, false);
+    assert.equal(ui.el("start-button").disabled, true, "12 questions cannot fill a 20-question match");
+    assert.match(ui.el("host-message").textContent, /تحتاج 20 سؤالًا/);
     await cards[1].click();
     assert.deepEqual(Array.from(ui.socket.sent.at(-1).data.categoryIds), ["science", "history"]);
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], scoringMode: 3 }));
     assert.match(ui.el("category-count").textContent, /21 سؤالًا/);
+    assert.equal(ui.el("start-button").disabled, false);
+    assert.equal(cards[0].children[3].textContent, "12 سؤالًا");
     assert.equal(ui.el("scoring-mode").value, "3");
     assert.match(ui.el("scoring-description").textContent, /نقطة واحدة/);
     await ui.el("scoring-mode").fire("change", { target: { value: "5" } });
@@ -392,6 +395,21 @@ test("category cards and scoring update only from server snapshots, support mult
     assert.equal(ui.el("category-cards").children.length, 1);
     assert.equal(ui.el("category-cards").children[0].children[2].textContent, "التاريخ الحديث");
     assert.equal(ui.el("category-cards").children[0].children[0].src, "/updated.webp");
+});
+
+test("empty categories cannot be picked but stay removable once chosen", async () => {
+    const ui = setup();
+    const categories = [{ id: "science", name: "علوم", count: 25 }, { id: "empty", name: "فارغ", count: 0 }];
+    ui.socket.receive("lobbyUpdate", categoryLobby({ categories }));
+    const cards = ui.el("category-cards").children;
+    assert.equal(cards[1].disabled, true);
+    assert.equal(cards[1].children[3].textContent, "لا توجد أسئلة");
+    assert.ok(cards[1].classList.contains("is-empty"));
+    await cards[1].fire("click");
+    assert.equal(ui.socket.sent.length, 0);
+    ui.socket.receive("lobbyUpdate", categoryLobby({ categories, selectedCategoryIds: ["empty"] }));
+    assert.equal(cards[1].disabled, false, "A chosen empty category can still be removed");
+    assert.match(ui.el("host-message").textContent, /أضف قسمًا آخر/);
 });
 
 test("guests see selected categories and scoring but cannot submit settings, even from a forced click", async () => {
@@ -410,7 +428,7 @@ test("guests see selected categories and scoring but cannot submit settings, eve
 
 test("settings prevent overlapping requests and recover from server rejection; start errors stay visible", async () => {
     const ui = setup();
-    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"] }));
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"] }));
     ui.socket.defer = true;
     const cards = ui.el("category-cards").children;
     await cards[1].click();
@@ -456,7 +474,7 @@ test("home controls preserve acknowledged room exit and prevent leaving an activ
     assert.equal(ui.socket.sent.length, sent);
     assert.equal(ui.el("game-screen").classList.contains("hidden"), false);
     ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: true, reason: "quota", winners: [{ id: "host", awardedPoints: 1 }] });
-    assert.equal(ui.el("answer-message").textContent, "إجابة صحيحة! +1 نقطة");
+    assert.equal(ui.el("answer-message").textContent, "إجابة صحيحة! \u2066+1\u2069 نقطة");
     ui.socket.receive("roundOver", { round: 1, ranking: [{ name: "أحمد", score: 2 }] });
     await ui.el("home-button").fire("click");
     assert.equal(ui.socket.sent.length, sent);

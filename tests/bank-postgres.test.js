@@ -91,3 +91,39 @@ test('PostgreSQL migration, CRUD, permissions, conflict protection and restart p
     assert.equal(restarted.gameQuestions(['legacy']).length, 20);
     assert.equal(restarted.snapshot().revision, before.revision);
 });
+
+// Staging and production share one database: each server must pick up the
+// other's edits before a game, and a single game must never expose the stored order.
+test('a second server syncs bank edits by revision and every game shuffles choices', { timeout: 30000 }, async t => {
+    const db = new PGlite();
+    t.after(() => db.close());
+    await db.exec('CREATE ROLE anon; CREATE ROLE authenticated;');
+    await db.exec(await readFile(path.join(__dirname, '../migrations/001_wamda_banks.sql'), 'utf8'));
+    const newStore = () => createQuestionStore({ required: 20, env: { DATABASE_URL: 'local-test-adapter', RENDER: 'true' },
+        logger: { info() {}, error() {} }, connect: async () => ({ query: (sql, values) => db.query(sql, values), end: async () => {} }) });
+    const staging = newStore(), production = newStore();
+    await staging.init(); await production.init();
+    assert.equal(await production.sync(), false, 'An unchanged revision does not reload the bank');
+    const state = staging.snapshot();
+    await staging.mutate({ action: 'createCategory', name: 'جغرافيا', revision: state.revision });
+    assert.equal(production.publicCategories().some(c => c.name === 'جغرافيا'), false);
+    assert.equal(await production.sync(), true);
+    assert.equal(production.publicCategories().some(c => c.name === 'جغرافيا'), true);
+    assert.equal(await production.sync(), false);
+
+    // A newer, unknown schema written by another version keeps the current bank.
+    await db.query(`UPDATE public.wamda_banks SET data = jsonb_set(jsonb_set(data, '{schemaVersion}', '3'), '{revision}', to_jsonb((data->>'revision')::int + 1))`);
+    await assert.rejects(production.sync());
+    assert.equal(production.publicCategories().some(c => c.name === 'جغرافيا'), true);
+
+    const stored = new Map(production.snapshot().banks[0].questions.map(q => [q.question, q]));
+    const orders = new Set();
+    for (let game = 0; game < 10; game++) for (const q of production.gameQuestions(['legacy'])) {
+        const original = stored.get(q.question);
+        assert.deepEqual([...q.choices].sort(), [...original.choices].sort());
+        assert.equal(q.choices[q.correct], original.choices[original.correct]);
+        orders.add(q.correct);
+    }
+    assert.equal(orders.size, 4, 'The correct answer appears in every position');
+    assert.deepEqual(production.snapshot().banks[0].questions, [...stored.values()], 'The stored bank keeps the editor\'s order');
+});

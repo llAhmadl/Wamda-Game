@@ -2,6 +2,7 @@
 (() => {
     const storageKey = "firsthit-theme";
     const root = document.documentElement;
+    root.dataset.page = window.location.pathname?.replace(/\/+$/, "") === "/developer" ? "developer" : "game";
     const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
     let preference = null;
 
@@ -18,7 +19,7 @@
         root.dataset.theme = theme;
         const dark = theme === "dark";
         const themeColor = document.querySelector('meta[name="theme-color"]');
-        if (themeColor) themeColor.content = dark ? "#1b1c1e" : "#ffffff";
+        if (themeColor) themeColor.content = dark ? "#2A2365" : "#ffffff";
 
         const button = document.getElementById("theme-toggle");
         const label = document.getElementById("theme-label");

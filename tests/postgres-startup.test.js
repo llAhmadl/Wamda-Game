@@ -27,7 +27,7 @@ test('real pg connection failure logs safely while HTTP and Socket.IO still star
     assert.match(logs, /\[PostgreSQL\] Connection failed/);
     assert.ok(!logs.includes(connection));
     assert.ok(!logs.includes('127.0.0.1:1'));
-    for (const route of ['/', '/api/version', '/socket.io/socket.io.js']) {
+    for (const route of ['/', '/api/version', '/healthz', '/socket.io/socket.io.js']) {
         assert.equal((await fetch(url + route)).status, 200);
     }
 });

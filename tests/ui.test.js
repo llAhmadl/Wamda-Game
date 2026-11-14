@@ -6,9 +6,12 @@ const vm = require("node:vm");
 
 const publicDir = path.join(__dirname, "../public");
 const html = fs.readFileSync(path.join(publicDir, "index.html"), "utf8");
-const appCode = fs.readFileSync(path.join(publicDir, "app.js"), "utf8");
+// The game is split into ordered classic scripts that share globals, as in index.html.
+const gameFiles = [...html.matchAll(/<script src="\/(game\/[\w-]+\.js)">/g)].map(match => match[1]);
+const gameCode = gameFiles.map(file => fs.readFileSync(path.join(publicDir, file), "utf8"));
 const themeCode = fs.readFileSync(path.join(publicDir, "theme.js"), "utf8");
 const nameCode = fs.readFileSync(path.join(publicDir, "name-validation.js"), "utf8");
+const settingsCode = fs.readFileSync(path.join(publicDir, "settings.js"), "utf8");
 
 // A deliberately small DOM double: these are logic checks, NOT browser/layout tests.
 class Element {
@@ -19,7 +22,8 @@ class Element {
         this.classList = {
             contains: name => this.className.split(/\s+/).includes(name),
             add: (...names) => { this.className = [...new Set([...this.className.split(/\s+/).filter(Boolean), ...names])].join(" "); },
-            remove: (...names) => { this.className = this.className.split(/\s+/).filter(n => !names.includes(n)).join(" "); }
+            remove: (...names) => { this.className = this.className.split(/\s+/).filter(n => !names.includes(n)).join(" "); },
+            toggle: (name, force) => { const on = force ?? !this.classList.contains(name); this.classList[on ? "add" : "remove"](name); return on; }
         };
     }
     set textContent(value) { this._text = String(value); this.children = []; }
@@ -34,6 +38,7 @@ class Element {
         this.parentElement = null;
     }
     close() { this.open = false; }
+    showModal() { this.open = true; }
     getBoundingClientRect() { return { top: (this.parentElement?.children.indexOf(this) || 0) * 69 }; }
     animate() { return { cancel() {} }; }
     setAttribute(key, value) { this.attributes[key] = String(value); }
@@ -50,7 +55,7 @@ class Element {
     querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
 }
 
-function setup({ saved = null, dark = false, blockedStorage = false, clipboardFails = false, reducedMotion = false } = {}) {
+function setup({ saved = null, dark = false, blockedStorage = false, clipboardFails = false, reducedMotion = false, session = null, search = "" } = {}) {
     const elements = new Map();
     for (const match of html.matchAll(/<([\w-]+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
         const element = new Element(match[1]);
@@ -73,43 +78,68 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
     document.getElementById = id => elements.get(id) || null;
     document.createElement = tag => new Element(tag);
     document.querySelector = selector => selector === 'meta[name="theme-color"]' ? meta : null;
-    document.querySelectorAll = selector => selector === 'dialog[open]' ? [...elements.values()].filter(element => element.tagName === 'dialog' && element.open) : [];
+    const pageRegions = [new Element("header"), el("game-main"), el("rename-dialog")];
+    document.querySelectorAll = selector => selector === "body > header, body > main, body > dialog" ? pageRegions : selector === 'dialog[open]' ? [...elements.values()].filter(element => element.tagName === 'dialog' && element.open) : [];
     const window = new Element("window");
+    let reloads = 0;
+    window.location = { search, origin: "https://wamda.test", reload() { reloads++; } };
+    const urls = [];
+    window.history = { replaceState(state, title, url) { urls.push(url); } };
     const system = new Element("media");
     system.matches = dark;
     window.matchMedia = query => query.includes("reduced-motion") ? { matches: reducedMotion } : system;
     window.scrollTo = () => {};
     const store = new Map(saved ? [["firsthit-theme", saved]] : []);
+    if (session) store.set("wamda-session-v1", JSON.stringify(session));
     const localStorage = {
+        removeItem: key => store.delete(key),
         getItem: key => { if (blockedStorage) throw Error("Storage blocked"); return store.get(key) ?? null; },
         setItem: (key, value) => { if (blockedStorage) throw Error("Storage blocked"); store.set(key, value); }
     };
     const socket = {
-        id: "host", connected: true, events: {}, sent: [], replies: {}, pending: [], defer: false,
+        connect() { this.connected = true; },
+        disconnect() { this.connected = false; this.receive("disconnect", "io client disconnect"); },
+        id: "transport-host", connected: true, events: {}, sent: [], replies: {}, pending: [], defer: false,
         on(event, callback) { this.events[event] = callback; },
         emit(event, data, callback) { this.sent.push({ event, data }); if (callback) callback({ ok: true, code: "ABCDE" }); },
         timeout() {
             return { emit: (event, data, callback) => {
                 this.sent.push({ event, data });
                 if (this.defer) this.pending.push(callback);
-                else callback(null, this.replies[event] || { ok: true });
+                else callback(null, this.replies[event] || { ok: true, ...(["createRoom", "joinRoom"].includes(event) ? { code: data?.code || "ABCDE" } : {}) });
             } };
         },
-        receive(event, data) { return this.events[event]?.(data); }
+        receive(event, data) {
+            if (event === "question") data = { deadline: clock + data.duration * 1000, serverNow: clock, ...data };
+            return this.events[event]?.(data);
+        }
     };
+    let clock = 0;
+    const timers = new Map();
     const intervals = new Map();
     let intervalId = 0;
     let copied = "";
     const context = vm.createContext({
-        document, window, localStorage, console, io: () => socket,
+        document, window, localStorage, console, io: options => { socket.initialAuth = options.auth; return socket; },
+        performance: { now: () => clock },
+        setTimeout: (callback, ms) => { timers.set(++intervalId, { callback, at: clock + ms }); return intervalId; },
+        clearTimeout: id => timers.delete(id),
         navigator: { clipboard: { writeText: async value => { if (clipboardFails) throw Error("Clipboard blocked"); copied = value; } } },
         setInterval: callback => { intervals.set(++intervalId, callback); return intervalId; },
-        clearInterval: id => intervals.delete(id)
+        clearInterval: id => intervals.delete(id),
+        fetch: () => new Promise(() => {})
     });
     vm.runInContext(themeCode, context);
     vm.runInContext(nameCode, context);
-    vm.runInContext(appCode, context);
-    return { el, document, window, system, store, socket, context, intervals, meta, get copied() { return copied; } };
+    for (const code of gameCode) vm.runInContext(code, context);
+    vm.runInContext(settingsCode, context);
+    socket.receive("sessionState", { session: session || { playerId: "host", reconnectToken: "test-token" }, state: null });
+    function advance(ms) {
+        clock += ms;
+        for (const [id, timer] of timers) if (timer.at <= clock) { timers.delete(id); timer.callback(); }
+        for (const callback of intervals.values()) callback();
+    }
+    return { el, document, window, system, store, socket, context, intervals, timers, advance, meta, pageRegions, urls, get reloads() { return reloads; }, get copied() { return copied; } };
 }
 
 test("light/dark toggle persists, updates its label and restores before DOM ready", async () => {
@@ -120,7 +150,7 @@ test("light/dark toggle persists, updates its label and restores before DOM read
     assert.equal(ui.document.documentElement.dataset.theme, "dark");
     assert.equal(ui.store.get("firsthit-theme"), "dark");
     assert.equal(ui.el("theme-label").textContent, "الوضع الفاتح");
-    assert.equal(ui.meta.content, "#1b1c1e");
+    assert.equal(ui.meta.content, "#2A2365");
     const reloaded = setup({ saved: "dark" });
     assert.equal(reloaded.document.documentElement.dataset.theme, "dark");
     await ui.el("theme-toggle").click();
@@ -206,23 +236,26 @@ test("answers submit once, selected wrong answers are not marked correct", async
     await choices[0].click();
     assert.equal(ui.socket.sent.filter(e => e.event === "submitAnswer").length, 1);
     assert.ok(choices.every(choice => choice.disabled));
-    ui.socket.receive("answerResult", { correct: false, correctIndex: 1 });
+    ui.socket.receive("answerResult", { correct: false });
     assert.ok(choices[0].classList.contains("is-wrong"));
-    assert.ok(choices[1].classList.contains("is-correct"));
+    assert.ok(choices.every(choice => !choice.classList.contains("is-correct")), "The correct choice waits for questionClosed");
     assert.equal(ui.el("answer-message").textContent, "");
-    assert.ok(!choices[0].classList.contains("is-correct"));
     assert.equal(choices[0].children[1].textContent, "One");
+    ui.socket.receive("questionClosed", { correctIndex: 1, lastInRound: false, reason: "timeout" });
+    assert.ok(choices[1].classList.contains("is-correct"));
+    assert.ok(!choices[0].classList.contains("is-correct"));
 });
 
 test("timer closes unanswered choices; equal scores share rank", () => {
     const ui = setup();
     ui.socket.receive("question", { number: 1, total: 5, question: "Test", choices: ["A", "B"], duration: 2 });
     const tick = [...ui.intervals.values()][0];
-    tick(); tick();
+    ui.advance(2000);
     assert.equal(ui.el("timer").textContent, "0");
     assert.ok(ui.el("choices").children.every(c => c.disabled));
     assert.match(ui.el("answer-message").textContent, /انتهى الوقت/);
     ui.socket.receive("gameOver", { ranking: [{name:"A", score:3},{name:"B", score:3},{name:"C", score:1}] });
+    for (let i = 0; i < 25; i++) ui.advance(100);
     assert.deepEqual(ui.el("results-list").children.map(row => row.children[0].textContent), ["1", "1", "3"]);
     assert.equal(ui.el("results-list").children.filter(row => row.classList.contains("winner")).length, 2);
 });
@@ -237,7 +270,7 @@ test("untrusted names stay plain text and offline actions do not queue rooms", a
     ui.socket.receive("disconnect");
     await ui.el("create-button").click();
     assert.equal(ui.socket.sent.length, 0);
-    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+    assert.equal(ui.el("name-screen").classList.contains("hidden"), false, "Keep the current screen during recovery");
 });
 
 test("static UI contracts: local fonts, reduced motion, and touch-friendly sizing", () => {
@@ -248,7 +281,7 @@ test("static UI contracts: local fonts, reduced motion, and touch-friendly sizin
     assert.match(css, /\.choice\.is-wrong \.choice-letter/);
     assert.ok(!/https?:\/\//.test(html + css));
     assert.match(html, /width=device-width/);
-    assert.match(css, /min-height: 48px/);
+    assert.match(css, /min-height: 52px/);
     assert.match(css, /min-height: 44px/);
     assert.match(css, /font-size: 16px/);
     assert.match(css, /prefers-reduced-motion|No animation/i);
@@ -291,10 +324,10 @@ test("first round counts from alphabetical zeros to ranked scores and cancels wh
     assert.ok(rows().every(row => row.children[2].textContent === "0 نقطة"));
     for (let i = 0; i < 12; i++) tick();
     assert.deepEqual(rows().map(row => row.children[1].textContent), ["أحمد", "خالد", "علي"], "Keep rows still while counting");
-    assert.deepEqual(rows().map(row => row.children[2].textContent), ["0 نقطة", "1 نقطة", "2 نقطة"]);
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["0 نقطة", "نقطة واحدة", "نقطتان"]);
     for (let i = 0; i < 3; i++) tick();
     assert.deepEqual(rows().map(row => row.children[1].textContent), ["علي", "خالد", "أحمد"]);
-    assert.deepEqual(rows().map(row => row.children[2].textContent), ["2 نقطة", "1 نقطة", "0 نقطة"]);
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["نقطتان", "نقطة واحدة", "0 نقطة"]);
     assert.equal(ui.intervals.size, 0);
     ui.socket.receive("roundOver", { round: 1, ranking });
     ui.socket.receive("question", { questionId: 5, round: 2, rounds: 3, number: 1, total: 5, question: "سؤال", choices: ["أ", "ب"], duration: 20 });
@@ -325,10 +358,10 @@ test("another player wins: lock every choice without showing a false timeout", (
 const categoryLobby = (overrides = {}) => ({
     code: "ABCDE", hostId: "host", players: [{ id: "host", name: "أحمد" }], phase: "lobby",
     categories: [
-        { id: "science", name: "علوم", image: "/images/categories/science.svg", count: 12 },
-        { id: "history", name: "تاريخ", image: "/images/categories/history.svg", count: 9 }
+        { id: "science", name: "علوم", image: "/images/categories/science.svg", available: true },
+        { id: "history", name: "تاريخ", image: "/images/categories/history.svg", available: true }
     ],
-    selectedCategoryIds: [], scoringMode: 1, ...overrides
+    selectedCategoryIds: [], scoringMode: 1, enoughQuestions: false, ...overrides
 });
 
 test("category cards and scoring update only from server snapshots, support multiselect and removal", async () => {
@@ -347,31 +380,50 @@ test("category cards and scoring update only from server snapshots, support mult
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"] }));
     assert.equal(cards[0].getAttribute("aria-pressed"), "true");
     assert.equal(cards[0].children[1].textContent, "✓");
-    assert.equal(ui.el("start-button").disabled, false);
+    assert.equal(ui.el("start-button").disabled, true, "The selection cannot fill a match yet");
+    assert.equal(ui.el("host-message").textContent, "الأقسام المختارة ما تكفي لمباراة كاملة. أضف قسمًا آخر.");
     await cards[1].click();
     assert.deepEqual(Array.from(ui.socket.sent.at(-1).data.categoryIds), ["science", "history"]);
-    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], scoringMode: 3 }));
-    assert.match(ui.el("category-count").textContent, /21 سؤالًا/);
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], scoringMode: 3, enoughQuestions: true }));
+    assert.equal(ui.el("category-count").textContent, "قسمان محددان");
+    assert.equal(ui.el("start-button").disabled, false);
+    assert.equal(cards[0].children[3].textContent, "", "Players never see how many questions a category holds");
+    assert.equal(cards[0].getAttribute("aria-label"), "علوم");
     assert.equal(ui.el("scoring-mode").value, "3");
-    assert.match(ui.el("scoring-description").textContent, /نقطتين/);
-    await ui.el("scoring-mode").fire("change", { target: { value: "4" } });
-    assert.equal(ui.socket.sent.at(-1).data.scoringMode, 4);
+    assert.match(ui.el("scoring-description").textContent, /نقطة واحدة/);
+    await ui.el("scoring-mode").fire("change", { target: { value: "5" } });
+    assert.equal(ui.socket.sent.at(-1).data.scoringMode, 5);
     await cards[0].click();
     assert.deepEqual(Array.from(ui.socket.sent.at(-1).data.categoryIds), ["history"]);
-    ui.socket.receive("lobbyUpdate", categoryLobby({ categories: [{ id: "history", name: "التاريخ الحديث", image: "/updated.webp", count: 20 }], selectedCategoryIds: ["history"] }));
+    ui.socket.receive("lobbyUpdate", categoryLobby({ categories: [{ id: "history", name: "التاريخ الحديث", image: "/updated.webp", available: true }], selectedCategoryIds: ["history"] }));
     assert.equal(ui.el("category-cards").children.length, 1);
     assert.equal(ui.el("category-cards").children[0].children[2].textContent, "التاريخ الحديث");
     assert.equal(ui.el("category-cards").children[0].children[0].src, "/updated.webp");
 });
 
+test("empty categories cannot be picked but stay removable once chosen", async () => {
+    const ui = setup();
+    const categories = [{ id: "science", name: "علوم", available: true }, { id: "empty", name: "فارغ", available: false }];
+    ui.socket.receive("lobbyUpdate", categoryLobby({ categories }));
+    const cards = ui.el("category-cards").children;
+    assert.equal(cards[1].disabled, true);
+    assert.equal(cards[1].children[3].textContent, "لا توجد أسئلة");
+    assert.ok(cards[1].classList.contains("is-empty"));
+    await cards[1].fire("click");
+    assert.equal(ui.socket.sent.length, 0);
+    ui.socket.receive("lobbyUpdate", categoryLobby({ categories, selectedCategoryIds: ["empty"] }));
+    assert.equal(cards[1].disabled, false, "A chosen empty category can still be removed");
+    assert.match(ui.el("host-message").textContent, /أضف قسمًا آخر/);
+});
+
 test("guests see selected categories and scoring but cannot submit settings, even from a forced click", async () => {
     const ui = setup();
-    ui.socket.receive("lobbyUpdate", categoryLobby({ hostId: "other", selectedCategoryIds: ["history"], scoringMode: 4 }));
+    ui.socket.receive("lobbyUpdate", categoryLobby({ hostId: "other", selectedCategoryIds: ["history"], scoringMode: 7 }));
     const cards = ui.el("category-cards").children;
     assert.ok(cards.every(card => card.disabled));
     assert.equal(cards[1].children[1].textContent, "✓");
     assert.equal(ui.el("scoring-mode").disabled, true);
-    assert.equal(ui.el("scoring-mode").value, "4");
+    assert.equal(ui.el("scoring-mode").value, "7");
     await cards[0].fire("click");
     await ui.el("scoring-mode").fire("change", { target: { value: "1" } });
     assert.equal(ui.socket.sent.length, 0);
@@ -380,7 +432,7 @@ test("guests see selected categories and scoring but cannot submit settings, eve
 
 test("settings prevent overlapping requests and recover from server rejection; start errors stay visible", async () => {
     const ui = setup();
-    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"] }));
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], enoughQuestions: true }));
     ui.socket.defer = true;
     const cards = ui.el("category-cards").children;
     await cards[1].click();
@@ -400,41 +452,628 @@ test("settings prevent overlapping requests and recover from server rejection; s
     assert.ok(ui.el("game-screen").classList.contains("hidden"));
 });
 
-test("logo returns home after acknowledged lobby exit and never leaves an active match", async () => {
+test("home controls preserve acknowledged room exit and prevent leaving an active match", async () => {
     const ui = setup();
     ui.el("name-input").value = "أحمد";
     await ui.el("play-button").click();
     await ui.el("create-button").click();
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"] }));
     ui.socket.defer = true;
-    await ui.el("home-logo").click();
+    await ui.el("home-button").click();
     assert.equal(ui.socket.sent.at(-1).event, "leaveRoom");
     assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
     ui.socket.pending.shift()(null, { ok: false, message: "تعذر المغادرة." });
     assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
-    await ui.el("home-logo").click();
-    ui.el("developer-dialog").open = true;
+    await ui.el("home-button").click();
+    ui.el("rename-dialog").open = true;
     ui.socket.pending.shift()(null, { ok: true });
     assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
-    assert.equal(ui.el("developer-dialog").open, false);
+    assert.equal(ui.el("rename-dialog").open, false);
     ui.socket.defer = false;
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"] }));
     ui.socket.receive("question", { questionId: 0, round: 1, rounds: 2, number: 1, total: 10, question: "سؤال", choices: ["أ", "ب"], duration: 20 });
     const sent = ui.socket.sent.length;
-    assert.equal(ui.el("home-logo").disabled, true);
-    await ui.el("home-logo").fire("click");
+    await ui.el("home-button").fire("click");
     vm.runInContext("returnHome()", ui.context);
     assert.equal(ui.socket.sent.length, sent);
     assert.equal(ui.el("game-screen").classList.contains("hidden"), false);
-    ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: true, reason: "quota", winners: [{ id: "host", awardedPoints: 2 }] });
-    assert.equal(ui.el("answer-message").textContent, "إجابة صحيحة! +2 نقطة");
-    assert.equal(ui.el("home-logo").disabled, true);
+    ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: true, reason: "quota", winners: [{ id: "host", awardedPoints: 1 }] });
+    assert.equal(ui.el("answer-message").textContent, "إجابة صحيحة! \u2066+1\u2069 نقطة");
     ui.socket.receive("roundOver", { round: 1, ranking: [{ name: "أحمد", score: 2 }] });
-    assert.equal(ui.el("home-logo").disabled, true);
-    await ui.el("home-logo").fire("click");
+    await ui.el("home-button").fire("click");
     assert.equal(ui.socket.sent.length, sent);
     ui.socket.receive("gameOver", { ranking: [{ name: "أحمد", score: 2 }] });
-    assert.equal(ui.el("home-logo").disabled, false);
-    await ui.el("home-logo").click();
+    await ui.el("home-button").click();
     assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+});
+
+const recoveryState = (overrides = {}) => ({
+    ...categoryLobby({ selectedCategoryIds: ["science"], phase: "question" }),
+    gameId: "match-one", question: { gameId: "match-one", questionId: 6, round: 1, number: 7,
+        choices: ["أ", "ب", "ج", "د"], question: "سؤال مستعاد", duration: 20,
+        deadline: 120000, serverNow: 113000 }, answer: null, review: null, results: null,
+    ...overrides
+});
+function restore(ui, state) {
+    ui.socket.connected = true;
+    ui.socket.receive("sessionState", { session: { playerId: "host", reconnectToken: "private-test" }, name: "أحمد", state });
+}
+
+test("brief outages stay invisible; sustained recovery locks page until server snapshot applies", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.advance(799);
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    const sent = ui.socket.sent.length;
+    await ui.el("choices").children[0].fire("click");
+    assert.equal(ui.socket.sent.length, sent);
+    restore(ui, recoveryState()); ui.advance(2);
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.el("rename-dialog").open = true;
+    ui.advance(800);
+    assert.equal(ui.el("rename-dialog").open, false);
+    assert.ok(!ui.el("connection-overlay").classList.contains("hidden"));
+    assert.ok(ui.pageRegions.every(el => el.inert));
+    assert.equal(ui.el("connection-message").textContent, "جاري إعادة الاتصال…");
+    ui.advance(9200);
+    assert.equal(ui.el("connection-message").textContent, "تعذر الاتصال، نحاول إعادتك للجلسة…");
+    ui.socket.connected = true; ui.socket.receive("connect");
+    assert.ok(!ui.el("connection-overlay").classList.contains("hidden"), "Transport readiness is not state readiness");
+    restore(ui, recoveryState());
+    assert.equal(ui.el("question-text").textContent, "سؤال مستعاد");
+    assert.equal(ui.el("timer").textContent, "7");
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    assert.ok(ui.pageRegions.every(el => !el.inert));
+    ui.advance(3500);
+    assert.equal(ui.el("timer").textContent, "4", "A throttled tick derives elapsed time, never subtracts just one second");
+});
+
+test("restored accepted answers cannot be submitted again and review/results use current state", async () => {
+    const ui = setup();
+    restore(ui, recoveryState({ answer: { answerIndex: 1, correct: false, awardedPoints: 0 } }));
+    assert.ok(ui.el("choices").children.every(button => button.disabled));
+    assert.ok(ui.el("choices").children[1].classList.contains("selected"));
+    assert.ok(ui.el("choices").children[1].classList.contains("is-wrong"));
+    await ui.el("choices").children[1].fire("click");
+    assert.equal(ui.socket.sent.filter(x => x.event === "submitAnswer").length, 0);
+    restore(ui, recoveryState({ hostId: "guest", phase: "review", review: { correctIndex: 0, lastInRound: false, reason: "winner", winners: [{ id: "guest", awardedPoints: 1 }] } }));
+    assert.ok(ui.el("choices").children.every(button => button.disabled));
+    assert.ok(ui.el("next-question-button").classList.contains("hidden"));
+    restore(ui, recoveryState({ phase: "finished", results: { round: 2, ranking: [{ id: "host", name: "أحمد", score: 17 }] } }));
+    assert.ok(!ui.el("results-screen").classList.contains("hidden"));
+    assert.equal(ui.el("results-list").children[0].children[2].textContent, "17 نقطة");
+    assert.equal(ui.intervals.size, 0);
+});
+
+test("wake synchronization ignores an old acknowledgement and retries failed snapshots while keeping overlay", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    ui.socket.defer = true;
+    ui.document.visibilityState = "visible";
+    await ui.document.fire("visibilitychange");
+    const stale = ui.socket.pending.shift();
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.advance(800);
+    restore(ui, recoveryState({ phase: "finished", results: { round: 2, ranking: [] } }));
+    stale(null, { ok: true, state: recoveryState() });
+    assert.ok(!ui.el("results-screen").classList.contains("hidden"));
+    await ui.window.fire("pageshow", { persisted: true });
+    ui.advance(800);
+    ui.socket.pending.shift()(Error("timeout"));
+    assert.ok(!ui.el("connection-overlay").classList.contains("hidden"));
+    ui.advance(1000);
+    ui.socket.pending.shift()(null, { ok: true, state: recoveryState() });
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    assert.equal(ui.el("timer").textContent, "7");
+});
+
+test("credentials persist privately; replaced tabs require explicit reclaim and unavailable sessions return home", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    assert.equal(JSON.parse(ui.store.get("wamda-session-v1")).reconnectToken, "private-test");
+    assert.equal(ui.el("connection-message").textContent.includes("private-test"), false);
+    ui.socket.receive("sessionReplaced");
+    ui.socket.connected = false; ui.socket.receive("disconnect", "io server disconnect");
+    assert.equal(ui.socket.connected, false, "Do not automatically fight the other tab");
+    assert.ok(!ui.el("reconnect-button").classList.contains("hidden"));
+    assert.ok(ui.pageRegions.every(el => el.inert));
+    await ui.el("reconnect-button").click();
+    assert.equal(ui.socket.connected, true);
+    assert.ok(!ui.el("connection-overlay").classList.contains("hidden"));
+    restore(ui, recoveryState());
+    ui.socket.receive("connect_error", { data: { code: "SESSION_INVALID" } });
+    assert.equal(ui.store.has("wamda-session-v1"), false);
+    ui.socket.receive("sessionState", { session: { playerId: "new", reconnectToken: "new-private" }, state: null });
+    assert.ok(!ui.el("home-screen").classList.contains("hidden"));
+    assert.match(ui.el("home-error").textContent, /الجلسة السابقة غير متاحة/);
+    const reloaded = setup({ session: { playerId: "host", reconnectToken: "private-test" } });
+    assert.equal(reloaded.socket.initialAuth.playerId, "host");
+    assert.equal(reloaded.socket.initialAuth.reconnectToken, "private-test");
+    const blocked = setup({ blockedStorage: true });
+    restore(blocked, recoveryState());
+    assert.equal(blocked.socket.auth.reconnectToken, "private-test");
+});
+
+test("connection overlay uses theme colors, subtle blur and reduced motion", () => {
+    const css = fs.readFileSync(path.join(publicDir, "style.css"), "utf8");
+    const overlay = css.slice(css.indexOf(".connection-overlay {"), css.indexOf(".connection-overlay.hidden"));
+    assert.match(overlay, /var\(--background\)/);
+    assert.match(overlay, /backdrop-filter: blur\(12px\)/);
+    assert.doesNotMatch(overlay, /gradient|box-shadow|text-shadow/);
+    assert.match(css, /prefers-reduced-motion: reduce[^@]*\.connection-loader \{ animation: none/);
+});
+
+
+test("brand returns to blank name entry before or after a match, preserving theme and connection", async () => {
+    for (const phase of ["home", "lobby", "finished"]) {
+        const ui = setup({ saved: "dark" });
+        const state = phase === "home" ? null : recoveryState({ phase });
+        if (phase === "review") state.review = { correctIndex: 0, reason: "timeout" };
+        if (["roundResults", "finished"].includes(phase)) state.results = { round: 1, ranking: [] };
+        restore(ui, state);
+        assert.equal(ui.el("home-logo").disabled, false, phase);
+        ui.socket.defer = true;
+        await ui.el("home-logo").click();
+        assert.equal(ui.socket.sent.at(-1).event, "resetSession");
+        assert.equal(ui.reloads, 0);
+        assert.equal(ui.el("home-logo").disabled, true);
+        await ui.el("home-logo").fire("click");
+        assert.equal(ui.socket.sent.filter(e => e.event === "resetSession").length, 1);
+        ui.socket.pending.shift()(null, { ok: true, name: "", state: null });
+        assert.equal(ui.reloads, 0);
+        assert.ok(!ui.el("name-screen").classList.contains("hidden"));
+        assert.equal(ui.el("player-name").textContent, "");
+        assert.equal(ui.socket.connected, true);
+        assert.equal(ui.store.get("firsthit-theme"), "dark");
+    }
+});
+
+test("lost reset reply restores blank name entry; failed reset keeps the current room", async () => {
+    const ui = setup();
+    restore(ui, recoveryState({ phase: "lobby" }));
+    ui.el("name-input").value = "أحمد";
+    ui.socket.defer = true;
+    await ui.el("home-logo").click();
+    ui.socket.pending.shift()(Error("timeout"));
+    assert.equal(ui.reloads, 0);
+    assert.equal(ui.socket.sent.at(-1).event, "syncState");
+    ui.socket.pending.shift()(null, { ok: true, name: "", state: null });
+    assert.ok(!ui.el("name-screen").classList.contains("hidden"));
+    assert.equal(ui.el("name-input").value, "");
+    assert.equal(ui.el("player-name").textContent, "");
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    restore(ui, recoveryState({ phase: "lobby" }));
+    await ui.el("home-logo").click();
+    ui.socket.pending.shift()(null, { ok: false });
+    ui.socket.pending.shift()(null, { ok: true, name: "أحمد", state: recoveryState({ phase: "lobby" }) });
+    assert.equal(ui.reloads, 0);
+    assert.ok(!ui.el("lobby-screen").classList.contains("hidden"));
+    assert.match(ui.el("site-error").textContent, /تعذرت العودة لصفحة الاسم/);
+});
+
+
+test("unsubmitted name survives wake and reconnect synchronization", async () => {
+    const ui = setup();
+    const fresh = { session: { playerId: "new", reconnectToken: "private-test" }, name: "", state: null };
+    ui.socket.receive("sessionState", fresh);
+    ui.el("name-input").value = "مسودة الاسم";
+    ui.socket.defer = true;
+    await ui.window.fire("pageshow", { persisted: true });
+    ui.socket.pending.shift()(null, { ok: true, name: "", state: null });
+    assert.equal(ui.el("name-input").value, "مسودة الاسم");
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.socket.connected = true; ui.socket.receive("sessionState", fresh);
+    assert.equal(ui.el("name-input").value, "مسودة الاسم");
+    assert.ok(!ui.el("name-screen").classList.contains("hidden"));
+});
+
+test("brand explicitly clears an unsubmitted draft, also after a lost reset reply", async () => {
+    for (const lostReply of [false, true]) {
+        const ui = setup();
+        ui.socket.receive("sessionState", { session: { playerId: "new", reconnectToken: "private-test" }, name: "", state: null });
+        ui.el("name-input").value = "مسودة الاسم";
+        ui.socket.defer = true;
+        await ui.el("home-logo").click();
+        if (lostReply) ui.socket.pending.shift()(Error("timeout"));
+        ui.socket.pending.shift()(null, { ok: true, name: "", state: null });
+        assert.equal(ui.el("name-input").value, "");
+        assert.equal(ui.el("player-name").textContent, "");
+        assert.ok(!ui.el("name-screen").classList.contains("hidden"));
+        assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+    }
+});
+
+
+test("brand reloads an active match directly without leaving or clearing credentials", async () => {
+    for (const phase of ["question", "review", "roundResults"]) {
+        const ui = setup({ saved: "dark" });
+        const state = recoveryState({ phase });
+        if (phase === "review") state.review = { correctIndex: 0, winners: [] };
+        if (phase === "roundResults") state.results = { round: 1, ranking: [] };
+        restore(ui, state);
+        const credentials = ui.store.get("wamda-session-v1");
+        await ui.el("home-logo").click();
+        assert.equal(ui.reloads, 1, phase);
+        assert.equal(ui.socket.sent.length, 0, "Refresh must not send resetSession or leaveRoom");
+        assert.equal(ui.store.get("wamda-session-v1"), credentials);
+        assert.equal(ui.store.get("firsthit-theme"), "dark");
+        assert.match(ui.el("home-logo").getAttribute("aria-label"), /استعادة المباراة/);
+    }
+});
+
+test("brand racing game start synchronizes into the match without reloading", async () => {
+    const ui = setup();
+    restore(ui, recoveryState({ phase: "lobby" }));
+    ui.socket.defer = true;
+    await ui.el("home-logo").click();
+    assert.equal(ui.socket.sent.at(-1).event, "resetSession");
+    ui.socket.pending.shift()(null, { ok: false, code: "GAME_ACTIVE" });
+    assert.equal(ui.socket.sent.at(-1).event, "syncState");
+    ui.socket.pending.shift()(null, { ok: true, name: "أحمد", state: recoveryState() });
+    assert.equal(ui.reloads, 0);
+    assert.ok(!ui.el("game-screen").classList.contains("hidden"));
+    assert.ok(ui.store.has("wamda-session-v1"));
+});
+
+test("brand keeps an active session and synchronizes when storage blocks reload recovery", async () => {
+    const ui = setup({ blockedStorage: true });
+    restore(ui, recoveryState());
+    ui.socket.defer = true;
+    await ui.el("home-logo").click();
+    assert.equal(ui.reloads, 0);
+    assert.equal(ui.socket.sent.at(-1).event, "syncState");
+    ui.socket.pending.shift()(null, { ok: true, name: "أحمد", state: recoveryState() });
+    assert.ok(!ui.el("game-screen").classList.contains("hidden"));
+    assert.ok(ui.el("connection-overlay").classList.contains("hidden"));
+});
+
+test("quitting asks first: cancel keeps the match, confirm sends quitMatch and returns home", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    assert.ok(!ui.el("quit-button").classList.contains("hidden"), "Quit is offered inside a room");
+    for (const action of ["confirm-cancel", "confirm-close", "escape"]) {
+        const pending = ui.context.requestQuitGame();
+        assert.equal(ui.el("confirm-dialog").open, true);
+        if (action === "escape") await ui.el("confirm-dialog").fire("cancel", { preventDefault() {} });
+        else await ui.el(action).click();
+        await pending;
+        assert.equal(ui.el("confirm-dialog").open, false);
+        assert.equal(ui.socket.sent.length, 0);
+        assert.ok(!ui.el("game-screen").classList.contains("hidden"));
+    }
+    const pending = ui.context.requestQuitGame();
+    await ui.el("confirm-accept").click();
+    await pending;
+    assert.equal(ui.socket.sent.at(-1).event, "quitMatch");
+    assert.ok(!ui.el("home-screen").classList.contains("hidden"));
+    assert.ok(ui.el("quit-button").classList.contains("hidden"), "No quit option outside a room");
+});
+
+test("hosts can promote and kick other players after confirming; a kicked player returns home", async () => {
+    const ui = setup();
+    ui.socket.receive("lobbyUpdate", { code: "ABCDE", hostId: "host", players: [{ id: "host", name: "أحمد", connected: true }, { id: "guest", name: "سارة", connected: true }] });
+    const [own, guest] = ui.el("players-list").children;
+    assert.equal(own.querySelector(".player-actions"), null, "No controls on yourself");
+    const [promote, kick] = guest.querySelector(".player-actions").children;
+    const asked = kick.click();
+    assert.equal(ui.el("confirm-dialog").open, true);
+    await ui.el("confirm-accept").click(); await asked;
+    assert.deepEqual({ ...ui.socket.sent.at(-1).data }, { code: "ABCDE", playerId: "guest" });
+    assert.equal(ui.socket.sent.at(-1).event, "kickPlayer");
+    const promoting = promote.click();
+    await ui.el("confirm-accept").click(); await promoting;
+    assert.equal(ui.socket.sent.at(-1).event, "makeHost");
+    const guestView = setup({ session: { playerId: "guest", reconnectToken: "t" } });
+    guestView.socket.receive("lobbyUpdate", { code: "ABCDE", hostId: "host", players: [{ id: "host", name: "أحمد" }, { id: "guest", name: "سارة" }] });
+    assert.equal(guestView.el("players-list").querySelector(".player-actions"), null, "Guests get no controls");
+    guestView.socket.receive("kicked", { message: "أخرجك المضيف من الغرفة." });
+    assert.ok(!guestView.el("home-screen").classList.contains("hidden") || !guestView.el("name-screen").classList.contains("hidden"));
+    assert.equal(guestView.el("home-error").textContent, "أخرجك المضيف من الغرفة.");
+});
+
+test("final results count up from round-one scores so overtakes animate", () => {
+    const ui = setup();
+    ui.socket.receive("roundOver", { round: 1, ranking: [{ id: "a", name: "علي", score: 5 }, { id: "b", name: "سارة", score: 2 }] });
+    for (let i = 0; i < 25; i++) ui.advance(100);
+    ui.socket.receive("gameOver", { round: 2, ranking: [{ id: "b", name: "سارة", score: 9 }, { id: "a", name: "علي", score: 6 }] });
+    const rows = () => ui.el("results-list").children;
+    assert.deepEqual(rows().map(row => row.children[1].textContent), ["علي", "سارة"], "Start from the round-one order");
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["5 نقاط", "نقطتان"]);
+    for (let i = 0; i < 25; i++) ui.advance(100);
+    assert.deepEqual(rows().map(row => row.children[1].textContent), ["سارة", "علي"], "The overtake reorders at the end");
+    assert.deepEqual(rows().map(row => row.children[2].textContent), ["9 نقاط", "6 نقاط"]);
+});
+
+
+test("live answer board follows server order, handles duplicates and stale events, and clears for each question", () => {
+    const ui = setup();
+    const state = recoveryState();
+    state.scoringMode = 3;
+    state.question.scoringMode = 3;
+    restore(ui, state);
+    const list = ui.el("answer-leaders");
+    assert.equal(list.children.length, 3);
+    assert.deepEqual(list.children.map(row => row.children[1].textContent), ["—", "—", "—"]);
+    const first = { id: "guest", name: "سوسن", rank: 1, awardedPoints: 1 };
+    const data = { gameId: state.gameId, questionId: 6, scoringMode: 3, winners: [first] };
+    ui.socket.receive("answerProgress", data);
+    const firstRow = list.children[0];
+    ui.socket.receive("answerProgress", data);
+    assert.equal(list.children[0], firstRow, "Repeated snapshots must not trigger another live announcement");
+    assert.deepEqual(list.children.map(row => row.children[1].textContent), ["سوسن", "—", "—"]);
+    assert.equal(list.children.filter(row => row.classList.contains("is-filled")).length, 1);
+    ui.socket.receive("answerProgress", { ...data, winners: [] });
+    ui.socket.receive("answerProgress", { ...data, gameId: "old", winners: [] });
+    ui.socket.receive("answerProgress", { ...data, questionId: 5, winners: [] });
+    assert.equal(list.children[0].children[1].textContent, "سوسن");
+    const unsafeName = "<img src=x onerror=alert(1)>";
+    ui.socket.receive("answerProgress", { ...data, winners: [first, { id: "host", name: unsafeName, rank: 2, awardedPoints: 1 }] });
+    assert.equal(list.children[1].children[1].textContent, unsafeName);
+    assert.equal(list.children[1].children[1].children.length, 0);
+    ui.socket.receive("question", { ...state.question, questionId: 7, number: 8, winners: [] });
+    ui.socket.receive("answerProgress", data);
+    assert.deepEqual(list.children.map(row => row.children[1].textContent), ["—", "—", "—"]);
+});
+
+test("answer board restores all four quotas and accepted names from server snapshots", () => {
+    for (const mode of [1, 3, 5, 7]) {
+        const ui = setup();
+        const winners = [{ id: "guest", name: "سوسن", rank: 1, awardedPoints: 1 }];
+        const state = recoveryState({ scoringMode: mode });
+        state.question = { ...state.question, scoringMode: mode, winners };
+        restore(ui, state);
+        assert.equal(ui.el("answer-leaders").children.length, mode);
+        assert.equal(ui.el("answer-leaders").children[0].children[1].textContent, "سوسن");
+        const restoredRow = ui.el("answer-leaders").children[0];
+        restore(ui, state);
+        assert.equal(ui.el("answer-leaders").children[0], restoredRow, "An unchanged wake snapshot must not reannounce winners");
+        ui.socket.receive("disconnect");
+        restore(ui, { ...state, phase: "review", review: { correctIndex: 0, reason: "timeout", winners } });
+        assert.equal(ui.el("answer-leaders").children[0].children[1].textContent, "سوسن");
+        assert.equal(ui.el("answer-leaders").children.filter(row => row.classList.contains("is-filled")).length, 1);
+    }
+});
+
+
+test("joining shows the server's reason and a lost reply re-enables room buttons", async () => {
+    const ui = setup();
+    ui.el("name-input").value = "أحمد";
+    await ui.el("play-button").click();
+    ui.socket.replies.joinRoom = { ok: false, message: "الغرفة مكتملة العدد." };
+    ui.el("room-code-input").value = "abcde";
+    await ui.el("join-button").click();
+    assert.equal(ui.el("room-code-input").getAttribute("placeholder"), "الغرفة مكتملة العدد.");
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+    ui.socket.defer = true;
+    await ui.el("create-button").click();
+    assert.equal(ui.el("create-button").disabled, true);
+    assert.equal(ui.el("join-button").disabled, true);
+    await ui.el("create-button").click();
+    assert.equal(ui.socket.sent.filter(m => m.event === "createRoom").length, 1, "A pending request is not sent twice");
+    ui.socket.pending.shift()(new Error("operation has timed out"));
+    assert.equal(ui.el("create-button").disabled, false);
+    assert.match(ui.el("home-error").textContent, /تعذر الوصول للخادم/);
+});
+
+test("an invite link joins its room after the name and cleans the address bar", async () => {
+    const ui = setup({ search: "?room=xk7pq" });
+    assert.equal(ui.socket.sent.some(m => m.event === "joinRoom"), false, "No join before the player has a name");
+    ui.el("name-input").value = "سارة";
+    await ui.el("play-button").click();
+    const join = ui.socket.sent.find(m => m.event === "joinRoom");
+    assert.deepEqual({ ...join.data }, { name: "سارة", code: "XK7PQ" });
+    assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
+    assert.deepEqual(ui.urls, ["/"]);
+    await ui.el("share-invite").click();
+    assert.equal(ui.copied, "https://wamda.test/?room=XK7PQ");
+    assert.match(ui.el("copy-message").textContent, /رابط الدعوة/);
+    const invalid = setup({ search: "?room=<script>" });
+    invalid.el("name-input").value = "سارة";
+    await invalid.el("play-button").click();
+    assert.equal(invalid.socket.sent.some(m => m.event === "joinRoom"), false);
+});
+
+test("lobby counts use correct Arabic number agreement", () => {
+    const ui = setup();
+    const text = state => { ui.socket.receive("lobbyUpdate", categoryLobby(state)); return ui.el("category-count").textContent; };
+    const many = Array.from({ length: 11 }, (_, i) => ({ id: `c${i}`, name: `قسم ${i}`, available: true }));
+    assert.equal(text({ selectedCategoryIds: [] }), "لم تختر أي قسم");
+    assert.equal(text({ selectedCategoryIds: ["science"] }), "قسم واحد محدد");
+    assert.equal(text({ selectedCategoryIds: ["science", "history"], enoughQuestions: true }), "قسمان محددان");
+    assert.equal(text({ categories: many, selectedCategoryIds: many.slice(0, 3).map(c => c.id) }), "3 أقسام محددة");
+    assert.equal(text({ categories: many, selectedCategoryIds: many.map(c => c.id) }), "11 قسمًا محددًا");
+    assert.equal(vm.runInContext("[0, 1, 2, 3, 10, 11, 103].map(pointsText).join('|')", ui.context), "0 نقطة|نقطة واحدة|نقطتان|3 نقاط|10 نقاط|11 نقطة|103 نقاط");
+});
+
+test("a closed question shows that it ended instead of a frozen second", () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    assert.equal(ui.el("timer").parentElement.dataset.state, "open");
+    ui.socket.receive("questionClosed", { correctIndex: 1, lastInRound: false, reason: "winner", winner: { id: "guest", name: "علي" } });
+    assert.equal(ui.el("timer").parentElement.dataset.state, "closed");
+    ui.socket.receive("question", { ...recoveryState().question, questionId: 7 });
+    assert.equal(ui.el("timer").parentElement.dataset.state, "open");
+});
+
+test("answer board crowns the first place and gives every other place its own color", () => {
+    const ui = setup();
+    const state = recoveryState({ scoringMode: 5 });
+    state.question.scoringMode = 5;
+    restore(ui, state);
+    ui.socket.receive("answerProgress", { gameId: state.gameId, questionId: 6, scoringMode: 5,
+        winners: [{ id: "a", name: "سارة" }, { id: "host", name: "أحمد" }, { id: "c", name: "فهد" }] });
+    const rows = ui.el("answer-leaders").children;
+    assert.deepEqual(rows.map(row => row.classList.contains("place-1") ? 1 : row.classList.contains("place-2") ? 2 : row.classList.contains("place-3") ? 3 : 0), [1, 2, 3, 0, 0]);
+    assert.ok(rows[1].classList.contains("is-me"));
+    assert.deepEqual(rows.map(row => row.children[0].textContent), ["1", "2", "3", "4", "5"]);
+});
+
+test("question pictures show only for questions that have one", () => {
+    const ui = setup();
+    restore(ui, recoveryState({ question: { ...recoveryState().question, image: "/category-images/x.webp" } }));
+    assert.ok(!ui.el("question-image").classList.contains("hidden"));
+    assert.equal(ui.el("question-image").src, "/category-images/x.webp");
+    ui.socket.receive("question", { ...recoveryState().question, questionId: 7 });
+    assert.ok(ui.el("question-image").classList.contains("hidden"));
+});
+
+test("host chooses 15 or 20 seconds; the choice is sent with the other settings", async () => {
+    const ui = setup();
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"], scoringMode: 3, duration: 20 }));
+    ui.el("duration-mode").value = "15";
+    await ui.el("duration-mode").fire("change", { target: { value: "15" } });
+    assert.deepEqual({ ...ui.socket.sent.at(-1).data }, { code: "ABCDE", categoryIds: ["science"], scoringMode: 3, duration: 15 });
+    const guest = setup({ session: { playerId: "guest", reconnectToken: "t" } });
+    guest.socket.receive("lobbyUpdate", categoryLobby({ duration: 15 }));
+    assert.equal(guest.el("duration-mode").disabled, true);
+    assert.equal(guest.el("duration-mode").value, "15");
+});
+
+test("sound toggle is remembered and works without audio support", async () => {
+    const ui = setup();
+    assert.equal(ui.el("sound-label").textContent, "إيقاف الأصوات");
+    await ui.el("sound-toggle").click();
+    assert.equal(ui.store.get("wamda-sound"), "off");
+    assert.equal(ui.el("sound-toggle").getAttribute("aria-pressed"), "false");
+    assert.equal(ui.el("sound-label").textContent, "تشغيل الأصوات");
+    ui.socket.receive("answerResult", { correct: true, correctIndex: 0 });
+});
+
+test("the host manages players from the menu during a match", async () => {
+    const ui = setup();
+    restore(ui, recoveryState({ players: [{ id: "host", name: "أحمد", connected: true }, { id: "guest", name: "سارة", connected: true }] }));
+    assert.ok(!ui.el("players-button").classList.contains("hidden"));
+    vm.runInContext("openPlayersDialog()", ui.context);
+    assert.equal(ui.el("players-dialog").open, true);
+    const [, guestRow] = ui.el("players-manage").children;
+    const asked = guestRow.querySelector(".player-actions").children[1].click();
+    await ui.el("confirm-accept").click(); await asked;
+    assert.equal(ui.socket.sent.at(-1).event, "kickPlayer");
+    const guest = setup({ session: { playerId: "guest", reconnectToken: "t" } });
+    guest.socket.receive("lobbyUpdate", categoryLobby());
+    assert.ok(guest.el("players-button").classList.contains("hidden"), "Only the host sees player management");
+});
+
+test("play again: the host restarts from the final results and everyone returns to the lobby", async () => {
+    const host = setup();
+    host.socket.receive("lobbyUpdate", categoryLobby({ phase: "finished" }));
+    host.socket.receive("gameOver", { round: 2, ranking: [{ id: "host", name: "أحمد", score: 0 }] });
+    assert.ok(!host.el("play-again-button").classList.contains("hidden"));
+    await host.el("play-again-button").click();
+    assert.deepEqual({ event: host.socket.sent.at(-1).event, ...host.socket.sent.at(-1).data }, { event: "playAgain", code: "ABCDE" });
+    host.socket.receive("lobbyUpdate", categoryLobby({ phase: "lobby" }));
+    assert.ok(!host.el("lobby-screen").classList.contains("hidden"));
+    const guest = setup({ session: { playerId: "guest", reconnectToken: "t" } });
+    guest.socket.receive("lobbyUpdate", categoryLobby({ phase: "finished" }));
+    guest.socket.receive("gameOver", { round: 2, ranking: [{ id: "guest", name: "سارة", score: 0 }] });
+    assert.ok(guest.el("play-again-button").classList.contains("hidden"), "Guests wait for the host");
+    assert.match(guest.el("round-message").textContent, /مباراة جديدة/);
+    guest.socket.receive("lobbyUpdate", categoryLobby({ phase: "lobby" }));
+    assert.ok(!guest.el("lobby-screen").classList.contains("hidden"));
+});
+
+test("the lobby shows no question numbers, whatever the server sends", () => {
+    const ui = setup();
+    // Old payload fields must be ignored rather than rendered.
+    ui.socket.receive("lobbyUpdate", categoryLobby({
+        categories: [{ id: "science", name: "علوم", available: true, count: 37 }, { id: "empty", name: "فارغ", available: false, count: 0 }],
+        selectedCategoryIds: ["science"], availableQuestionCount: 37, requiredQuestions: 20
+    }));
+    const cards = ui.el("category-cards").children;
+    const shown = [ui.el("category-count").textContent, ui.el("host-message").textContent,
+        ...cards.flatMap(card => [card.textContent, card.getAttribute("aria-label")])].join(" | ");
+    assert.doesNotMatch(shown, /\d|سؤالًا|أسئلة متاحة/);
+    assert.equal(cards[1].children[3].textContent, "لا توجد أسئلة");
+    assert.equal(cards[1].getAttribute("aria-label"), "فارغ · لا توجد أسئلة");
+    assert.equal(ui.el("start-button").disabled, true, "Without enoughQuestions the match cannot start");
+});
+
+const nameTaken = { ok: false, code: "NAME_TAKEN", message: "في الغرفة لاعب بنفس اسمك. غيّر اسمك لتدخل." };
+async function enterName(ui, name = "سارة") {
+    ui.el("name-input").value = name;
+    await ui.el("play-button").click();
+}
+async function rename(ui, name) {
+    // Like the server, acknowledge with the saved name unless a test set a rejection.
+    if (ui.socket.replies.changeName?.ok !== false) ui.socket.replies.changeName = { ok: true, name };
+    ui.el("rename-input").value = name;
+    await ui.el("rename-form").fire("submit", { preventDefault() {} });
+}
+
+test("a taken name opens the rename dialog, keeps the code and retries the join after renaming", async () => {
+    const ui = setup();
+    await enterName(ui);
+    ui.el("room-code-input").value = "qwert";
+    ui.socket.replies.joinRoom = nameTaken;
+    await ui.el("join-button").click();
+    await Promise.resolve();
+    const dialog = ui.el("rename-dialog");
+    assert.equal(dialog.open, true);
+    assert.equal(ui.el("rename-input").value, "سارة");
+    assert.equal(ui.el("rename-error").textContent, nameTaken.message);
+    assert.equal(ui.el("rename-error").classList.contains("sr-only"), false, "The reason is visible in the dialog");
+    assert.equal(ui.el("room-code-input").value, "qwert", "The typed code is kept");
+    assert.equal(ui.el("room-code-input").getAttribute("aria-invalid"), null, "Not a room-code error");
+    assert.equal(ui.el("home-error").textContent, "");
+    assert.ok(ui.el("lobby-screen").classList.contains("hidden"));
+
+    // Still taken after the first rename: the dialog comes back with the message.
+    await rename(ui, "سارة ٢");
+    await Promise.resolve();
+    assert.deepEqual(ui.socket.sent.slice(-2).map(m => [m.event, m.data.name, m.data.code]), [["changeName", "سارة ٢", undefined], ["joinRoom", "سارة ٢", "QWERT"]]);
+    assert.equal(dialog.open, true);
+    assert.equal(ui.el("rename-error").textContent, nameTaken.message);
+
+    delete ui.socket.replies.joinRoom;
+    await rename(ui, "نورة");
+    assert.equal(JSON.stringify(ui.socket.sent.at(-1)), JSON.stringify({ event: "joinRoom", data: { name: "نورة", code: "QWERT" } }));
+    assert.equal(dialog.open, false);
+    assert.equal(ui.el("player-name").textContent, "نورة");
+    assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
+    assert.equal(ui.el("room-code").textContent, "QWERT");
+});
+
+test("closing the taken-name dialog stays home with the code; a later menu rename does not join", async () => {
+    const ui = setup();
+    await enterName(ui);
+    ui.el("room-code-input").value = "QWERT";
+    ui.socket.replies.joinRoom = nameTaken;
+    await ui.el("join-button").click();
+    await Promise.resolve();
+    ui.el("rename-dialog").close();
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+    assert.equal(ui.el("room-code-input").value, "QWERT");
+    delete ui.socket.replies.joinRoom;
+    await ui.el("rename-button").click();
+    assert.equal(ui.el("rename-error").textContent, "", "The menu dialog opens clean");
+    await rename(ui, "نورة");
+    assert.equal(ui.socket.sent.at(-1).event, "changeName");
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+});
+
+test("an invite link with a taken name asks for a new name, then joins the invited room", async () => {
+    const ui = setup({ search: "?room=abcde" });
+    ui.socket.replies.joinRoom = nameTaken;
+    await enterName(ui);
+    await Promise.resolve();
+    assert.equal(ui.el("rename-dialog").open, true);
+    assert.equal(ui.el("rename-error").textContent, nameTaken.message);
+    delete ui.socket.replies.joinRoom;
+    await rename(ui, "نورة");
+    assert.equal(JSON.stringify(ui.socket.sent.at(-1)), JSON.stringify({ event: "joinRoom", data: { name: "نورة", code: "ABCDE" } }));
+    assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
+});
+
+test("a menu rename rejected in the lobby shows the server message and keeps the name", async () => {
+    const ui = setup();
+    await enterName(ui);
+    ui.socket.receive("lobbyUpdate", categoryLobby());
+    await ui.el("rename-button").click();
+    ui.socket.replies.changeName = { ok: false, code: "NAME_TAKEN", message: "في الغرفة لاعب بنفس هذا الاسم. اختر اسمًا آخر." };
+    await rename(ui, "أحمد");
+    assert.equal(ui.el("rename-error").textContent, "في الغرفة لاعب بنفس هذا الاسم. اختر اسمًا آخر.");
+    assert.equal(ui.el("rename-dialog").open, true);
+    assert.equal(ui.el("player-name").textContent, "سارة");
 });

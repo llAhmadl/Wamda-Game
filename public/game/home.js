@@ -23,7 +23,7 @@ function requestRoom(event, data, onError) {
         roomRequestPending = false;
         createButton.disabled = joinButton.disabled = false;
         if (error) { homeError.textContent = "تعذر الوصول للخادم. حاول مرة أخرى."; return; }
-        if (!response?.ok) { onError(response?.message || "تعذر إكمال الطلب. حاول مرة أخرى."); return; }
+        if (!response?.ok) { onError(response?.message || "تعذر إكمال الطلب. حاول مرة أخرى.", response?.code); return; }
         currentRoom = response.code;
         roomCodeText.textContent = currentRoom;
         showScreen("lobby");
@@ -54,7 +54,12 @@ function joinRoom() {
     clearRoomCodeError();
     const code = roomCodeInput.value.trim().toUpperCase();
     if (!code) { showRoomCodeError(roomCodePlaceholder); return; }
-    requestRoom("joinRoom", { name: playerName, code }, showRoomCodeError);
+    requestRoom("joinRoom", { name: playerName, code }, (message, reason) => {
+        if (reason !== "NAME_TAKEN") { showRoomCodeError(message); return; }
+        // Someone in that room has this name: keep the code, ask for another
+        // name (settings.js owns the dialog) and join again once it is saved.
+        openRenameDialog(message, () => { roomCodeInput.value = code; joinRoom(); });
+    });
 }
 joinButton.addEventListener("click", joinRoom);
 roomCodeInput.addEventListener("keydown", event => { if (event.key === "Enter") joinRoom(); });

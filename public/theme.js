@@ -19,7 +19,7 @@
         root.dataset.theme = theme;
         const dark = theme === "dark";
         const themeColor = document.querySelector('meta[name="theme-color"]');
-        if (themeColor) themeColor.content = dark ? "#000000" : "#f5f5f7";
+        if (themeColor) themeColor.content = dark ? "#2A2365" : "#ffffff";
 
         const button = document.getElementById("theme-toggle");
         const label = document.getElementById("theme-label");

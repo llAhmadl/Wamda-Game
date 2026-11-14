@@ -84,13 +84,33 @@ test("two real clients: all questions, scores, host transfer and question timeou
     assert.match(created.code, /^[A-Z2-9]{5}$/);
     const lobby = nextEvent(host, "lobbyUpdate", data => data.players.length === 2);
     assert.equal((await request(guest, "joinRoom", { name: "Player two", code: created.code.toLowerCase() })).ok, true);
-    assert.equal((await lobby).players.length, 2);
+    const firstLobby = await lobby;
+    assert.equal(firstLobby.players.length, 2);
+    // Bank sizes are for Developer Mode only: players get booleans, never numbers.
+    const noCounts = data => {
+        assert.equal(JSON.stringify(data).includes('ount'), false, 'No count field of any spelling');
+        assert.equal('requiredQuestions' in data, false);
+        assert.deepEqual(Object.keys(data.categories[0]).sort(), ['available', 'id', 'image', 'name']);
+        assert.ok(data.categories.every(c => typeof c.available === 'boolean'));
+        assert.equal(typeof data.enoughQuestions, 'boolean');
+    };
+    noCounts(firstLobby);
+    assert.equal(firstLobby.enoughQuestions, false);
+    assert.equal(firstLobby.categories.find(c => c.id === 'legacy').available, true);
+    assert.equal(firstLobby.categories.find(c => c.id === 'islamic').available, false);
 
     assert.equal((await request(host,'startGame',{code:created.code})).ok,false);
     assert.equal((await request(guest,'updateRoomSettings',{code:created.code,categoryIds:['legacy'],scoringMode:5})).ok,false);
     assert.equal((await request(host,'updateRoomSettings',{code:created.code,categoryIds:['islamic'],scoringMode:1})).ok,true);
-    assert.equal((await request(host,'startGame',{code:created.code})).ok,false);
+    const short = await request(host,'startGame',{code:created.code});
+    assert.equal(short.ok,false);
+    assert.doesNotMatch(short.message, /\d/, 'The refusal does not quote bank numbers');
+    const ready = nextEvent(guest, "lobbyUpdate", data => data.enoughQuestions);
     await request(host,'updateRoomSettings',{code:created.code,categoryIds:['legacy'],scoringMode:1});
+    noCounts(await ready);
+    const synced = (await request(guest, 'syncState', {})).state;
+    noCounts(synced);
+    assert.equal(synced.enoughQuestions, true);
     const seen=new Set();
     let questions = Promise.all([nextEvent(host, "question"), nextEvent(guest, "question")]);
     host.emit("startGame", { code: created.code });

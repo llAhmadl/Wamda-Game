@@ -21,8 +21,8 @@ async function setup(t, options = {}) {
     const httpServer = http.createServer();
     const io = new Server(httpServer);
     const store = {
-        publicCategories: () => [{ id: 'test', name: 'اختبار', count: 20 }],
-        availableQuestionCount: () => 20,
+        publicCategories: () => [{ id: 'test', name: 'اختبار', available: true }],
+        enoughQuestions: () => true,
         gameQuestions: () => Array.from({ length: 20 }, (_, i) => ({ question: `سؤال ${i}`, choices: ['أ', 'ب', 'ج', 'د'], correct: 0, categoryId: 'test' }))
     };
     installMultiplayer(io, rooms, store, {
@@ -608,4 +608,51 @@ test('host picks a 15 or 20 second question, and play again restarts the same ro
     const first = await restarted;
     assert.equal(first.number, 1);
     assert.notEqual(first.gameId, gameId);
+});
+
+test('a room never holds two players with the same name: join and rename are refused with NAME_TAKEN', async t => {
+    const f = await setup(t), host = await f.connect(), guest = await f.connect(), other = await f.connect();
+    const { code } = await request(host, 'createRoom', { name: 'Ahmad' });
+    const elsewhere = await request(other, 'createRoom', { name: 'Ahmad' });
+    assert.equal(elsewhere.ok, true, 'The same name is fine in a different room');
+
+    // Case and invisible characters do not make a name different.
+    for (const name of ['Ahmad', 'AHMAD', ' ahmad\u200b ']) {
+        assert.deepEqual(await request(guest, 'joinRoom', { code, name }),
+            { ok: false, code: 'NAME_TAKEN', message: 'في الغرفة لاعب بنفس اسمك. غيّر اسمك لتدخل.' });
+    }
+    assert.equal(f.rooms.get(code).players.size, 1);
+    assert.equal((await request(guest, 'syncState')).state, null);
+
+    // A refused join does not pull the player out of the room they are in.
+    assert.deepEqual(await request(other, 'joinRoom', { code, name: 'ahmad' }),
+        { ok: false, code: 'NAME_TAKEN', message: 'في الغرفة لاعب بنفس اسمك. غيّر اسمك لتدخل.' });
+    assert.equal((await snapshot(other)).code, elsewhere.code);
+
+    assert.equal((await request(guest, 'joinRoom', { code, name: 'سارة' })).ok, true);
+    assert.deepEqual(await request(guest, 'changeName', { name: 'aHMAD' }),
+        { ok: false, code: 'NAME_TAKEN', message: 'في الغرفة لاعب بنفس هذا الاسم. اختر اسمًا آخر.' });
+    assert.deepEqual((await snapshot(host)).players.map(p => p.name), ['Ahmad', 'سارة']);
+    // Keeping or re-casing your own name is not a clash, and outside a room any name is free.
+    assert.deepEqual(await request(guest, 'changeName', { name: 'سارة' }), { ok: true, name: 'سارة' });
+    assert.deepEqual(await request(host, 'changeName', { name: 'AHMAD' }), { ok: true, name: 'AHMAD' });
+    const free = await f.connect();
+    assert.equal((await request(free, 'changeName', { name: 'ahmad' })).ok, true);
+});
+
+test('rejoining your own room and reconnecting are unaffected by the name check', async t => {
+    const f = await setup(t), host = await f.connect(), guest = await f.connect();
+    const { code } = await request(host, 'createRoom', { name: 'أحمد' });
+    assert.equal((await request(guest, 'joinRoom', { code, name: 'سارة' })).ok, true);
+    assert.deepEqual(await request(guest, 'joinRoom', { code, name: 'سارة' }), { ok: true, code });
+    // Even a clashing name in the payload is ignored there: the player is already inside under their own name.
+    assert.deepEqual(await request(guest, 'joinRoom', { code, name: 'أحمد' }), { ok: true, code });
+    await f.disconnect(guest);
+    const back = await f.connect(guest.session);
+    assert.equal(back.state.code, code);
+    assert.deepEqual(back.state.players.map(p => p.name), ['أحمد', 'سارة']);
+    // An offline player still owns the name.
+    await f.disconnect(back);
+    const third = await f.connect();
+    assert.equal((await request(third, 'joinRoom', { code, name: 'سارة' })).code, 'NAME_TAKEN');
 });

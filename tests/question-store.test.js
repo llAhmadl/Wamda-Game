@@ -118,6 +118,13 @@ test('questions may carry an uploaded picture; unknown or foreign paths are reje
     await save(question('سؤال بلا صورة', ''));
     assert.equal('image' in state.banks[0].questions[0], false);
     assert.equal(store.availableQuestionCount(['legacy']), 33);
+    // Players get availability only; the numbers above stay on the server.
+    assert.equal(store.publicCategories().some(c => 'count' in c), false);
+    assert.equal(store.publicCategories().find(c => c.id === 'legacy').available, true);
+    assert.equal(store.publicCategories().find(c => c.id === 'science').available, false);
+    assert.equal(store.enoughQuestions(['legacy']), true);
+    assert.equal(store.enoughQuestions(['science']), false);
+    assert.equal(store.enoughQuestions([]), false);
     let picked = null;
     for (let game = 0; game < 200 && !picked; game++) picked = store.gameQuestions(['legacy']).find(q => q.image === image);
     assert.ok(picked, 'Game questions keep their picture');

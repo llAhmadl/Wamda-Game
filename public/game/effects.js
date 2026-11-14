@@ -16,7 +16,19 @@ const sound = (() => {
     }
     document.addEventListener("pointerdown", unlock, { passive: true });
     document.addEventListener("keydown", unlock);
-    function tone(frequency, start, length, { type = "sine", volume = .12, to = frequency } = {}) {
+    // Every voice passes one soft limiter so layered notes never clip on phone speakers.
+    let output = null;
+    function master() {
+        if (output) return output;
+        try {
+            const limiter = context.createDynamicsCompressor();
+            limiter.threshold.value = -14; limiter.ratio.value = 6; limiter.attack.value = .004; limiter.release.value = .18;
+            limiter.connect(context.destination);
+            output = limiter;
+        } catch { output = context.destination; }
+        return output;
+    }
+    function tone(frequency, start, length, { type = "sine", volume = .12, to = frequency, attack = .012 } = {}) {
         const time = context.currentTime + start;
         const oscillator = context.createOscillator();
         const gain = context.createGain();
@@ -24,17 +36,29 @@ const sound = (() => {
         oscillator.frequency.setValueAtTime(frequency, time);
         if (to !== frequency) oscillator.frequency.exponentialRampToValueAtTime(to, time + length);
         gain.gain.setValueAtTime(.0001, time);
-        gain.gain.exponentialRampToValueAtTime(volume, time + .012);
+        gain.gain.exponentialRampToValueAtTime(volume, time + attack);
         gain.gain.exponentialRampToValueAtTime(.0001, time + length);
-        oscillator.connect(gain).connect(context.destination);
+        oscillator.connect(gain).connect(master());
         oscillator.start(time);
         oscillator.stop(time + length + .02);
     }
+    // A mallet-like note: a round body plus a quiet octave that fades first.
+    function bell(frequency, start, length, volume = .1) {
+        tone(frequency, start, length, { volume });
+        tone(frequency * 2, start, length * .45, { type: "triangle", volume: volume * .35, attack: .004 });
+    }
     const sounds = {
         tick: () => tone(1046, 0, .07, { type: "triangle", volume: .09 }),
-        correct: () => { tone(659, 0, .14); tone(880, .09, .16); tone(1319, .19, .28, { volume: .1 }); },
-        wrong: () => { tone(233, 0, .32, { type: "sawtooth", volume: .05, to: 155 }); tone(175, .05, .3, { type: "triangle", volume: .07, to: 120 }); },
-        win: () => [523, 659, 784, 1047].forEach((note, index) => tone(note, index * .11, .3, { volume: .1 }))
+        correct: () => { bell(659, 0, .16); bell(988, .09, .2); bell(1319, .18, .42, .09); },
+        // Two soft falling mallet notes: clearly "no", never a buzzer.
+        wrong: () => { bell(392, 0, .2, .1); bell(294, .15, .42, .1); tone(147, .15, .36, { volume: .06 }); },
+        // A rising run, then a held bright chord with a little sparkle on top.
+        win: () => {
+            [523, 659, 784, 1047].forEach((note, index) => bell(note, index * .1, .26, .09));
+            [1047, 1319, 1568].forEach(note => bell(note, .46, 1.1, .075));
+            tone(523, .46, 1.1, { type: "triangle", volume: .06 });
+            [2093, 2637, 3136, 2637, 3136].forEach((note, index) => tone(note, .62 + index * .09, .22, { volume: .028, attack: .004 }));
+        }
     };
     function renderToggle() {
         const toggle = el("sound-toggle");
@@ -71,7 +95,7 @@ function celebrate() {
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
     const width = canvas.width = window.innerWidth * ratio;
     const height = canvas.height = window.innerHeight * ratio;
-    const colors = ["#87BDFF", "#FF6D42", "#FFC83D", "#34C759", "#AF7CFF", "#FF5C8A"];
+    const colors = ["#FFD23F", "#FF6D42", "#8FC7FF", "#35D6A0", "#B58CFF", "#FF5C7A"];
     const pieces = Array.from({ length: 140 }, () => ({
         x: width * (.2 + Math.random() * .6), y: -20 * ratio - Math.random() * height * .25,
         vx: (Math.random() - .5) * 9 * ratio, vy: (2 + Math.random() * 5) * ratio,
@@ -114,4 +138,17 @@ function crownIcon() {
     path.setAttribute("d", "M3 8.5 7.5 12 12 5l4.5 7L21 8.5 19 18H5Z");
     svg.appendChild(path);
     return svg;
+}
+
+// Passing messages are fixed toasts (style.css). Replay the entrance whenever one is set again,
+// so copying twice or repeating a mistake shows the message twice.
+if (window.MutationObserver) {
+    const replay = new window.MutationObserver(records => {
+        for (const { target } of records) {
+            target.style.animation = "none";
+            void target.offsetWidth;
+            target.style.animation = "";
+        }
+    });
+    for (const id of ["site-error", "copy-message", "lobby-error", "home-error"]) replay.observe(el(id), { childList: true });
 }

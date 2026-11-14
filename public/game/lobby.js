@@ -1,5 +1,5 @@
 // Lobby: room settings, the roster, host controls, confirmations and leaving.
-let lobbySettings = { categories: [], selectedCategoryIds: [], scoringMode: 1, duration: 20, requiredQuestions: 20 };
+let lobbySettings = { categories: [], selectedCategoryIds: [], scoringMode: 1, duration: 20, enoughQuestions: false };
 let settingsPending = false;
 let roster = { players: [], hostId: null };
 const categoryNodes = new Map();
@@ -41,26 +41,24 @@ function renderLobbySettings() {
             grid.appendChild(button);
         }
         const selected = lobbySettings.selectedCategoryIds.includes(category.id);
-        const empty = !category.count;
+        // The server never tells players how many questions a category holds.
+        const empty = !category.available;
         node.image.src = category.image || "/images/categories/placeholder.svg";
         node.name.textContent = category.name;
-        node.size.textContent = empty ? "لا توجد أسئلة" : questionsText(category.count);
+        node.size.textContent = empty ? "لا توجد أسئلة" : "";
         node.check.textContent = selected ? "✓" : "";
         node.button.classList.toggle("is-empty", empty);
         node.button.setAttribute("aria-pressed", String(selected));
-        node.button.setAttribute("aria-label", `${category.name} · ${questionsText(category.count || 0)}`);
+        node.button.setAttribute("aria-label", empty ? `${category.name} · لا توجد أسئلة` : category.name);
         // An empty category can't help a game; it stays removable if it was already chosen.
         node.button.disabled = !editable || (empty && !selected);
     });
     const selectedCount = lobbySettings.selectedCategoryIds.length;
-    const required = lobbySettings.requiredQuestions;
-    const count = lobbySettings.availableQuestionCount ?? categories.filter(c => lobbySettings.selectedCategoryIds.includes(c.id)).reduce((sum, c) => sum + (c.count || 0), 0);
-    const sections = arabicCount(selectedCount, ["قسم واحد محدد", "قسمان محددان", "أقسام محددة", "قسمًا محددًا"], "لم تختر أي قسم");
-    const available = count ? `${questionsText(count)} ${count === 1 ? "متاح" : count === 2 ? "متاحان" : count % 100 >= 3 && count % 100 <= 10 ? "متاحة" : "متاحًا"}` : "لا توجد أسئلة متاحة";
-    el("category-count").textContent = `${sections} · ${available} · تحتاج المباراة ${questionsText(required)}`;
+    const enough = lobbySettings.enoughQuestions;
+    el("category-count").textContent = arabicCount(selectedCount, ["قسم واحد محدد", "قسمان محددان", "أقسام محددة", "قسمًا محددًا"], "لم تختر أي قسم");
     el("host-message").textContent = !amHost ? "بانتظار المضيف لبدء اللعبة..."
         : !selectedCount ? "اختر قسمًا واحدًا على الأقل لتبدأ."
-        : count < required ? `الأقسام المختارة فيها ${questionsText(count)}، والمباراة تحتاج ${questionsText(required)}. أضف قسمًا آخر.`
+        : !enough ? "الأقسام المختارة ما تكفي لمباراة كاملة. أضف قسمًا آخر."
         : "ابدأ عندما ينضم الجميع.";
     el("category-hint").textContent = amHost ? "" : "المضيف يختار الأقسام. تظهر اختياراته هنا مباشرة.";
     const scoring = el("scoring-mode");
@@ -71,7 +69,7 @@ function renderLobbySettings() {
     const duration = el("duration-mode");
     duration.value = String(lobbySettings.duration);
     duration.disabled = !editable;
-    startButton.disabled = !editable || !selectedCount || count < required;
+    startButton.disabled = !editable || !selectedCount || !enough;
 }
 
 function changeRoomSettings(changes) {
@@ -127,7 +125,7 @@ function renderLobby(data) {
     }
     if (data.phase) phase = data.phase;
     lobbySettings = { categories: data.categories || [], selectedCategoryIds: data.selectedCategoryIds || [], scoringMode: data.scoringMode || 1,
-        duration: data.duration || 20, availableQuestionCount: data.availableQuestionCount, requiredQuestions: data.requiredQuestions || 20 };
+        duration: data.duration || 20, enoughQuestions: Boolean(data.enoughQuestions) };
     renderLobbySettings();
     updateControls();
     startButton.classList.toggle("hidden", !amHost);

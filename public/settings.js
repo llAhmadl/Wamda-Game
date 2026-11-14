@@ -52,12 +52,19 @@
         if (close) el(close.dataset.close).close();
     });
     el('rules-button').addEventListener('click', () => open(el('rules-dialog')));
-    el('rename-button').addEventListener('click', async () => {
+    // Runs once after the next saved name; home.js uses it to retry a join
+    // that the room refused because the name was taken.
+    let afterRename = null;
+    async function openRenameDialog(message = '', onRenamed = null) {
+        afterRename = onRenamed;
         el('rename-input').value = playerName;
         renameField.clear();
+        el('rename-error').textContent = message;
         await open(el('rename-dialog'));
         el('rename-input').focus();
-    });
+    }
+    globalThis.openRenameDialog = openRenameDialog;
+    el('rename-button').addEventListener('click', () => openRenameDialog());
     el('rename-form').addEventListener('submit', async event => {
         event.preventDefault();
         const name = cleanPlayerName(el('rename-input').value);
@@ -73,6 +80,9 @@
             playerNameText.textContent = result.name;
             el('rename-dialog').close();
             if (!screens.name.classList.contains('hidden')) showScreen('home');
+            const next = afterRename;
+            afterRename = null;
+            next?.();
         } catch (error) { el('rename-error').textContent = error.message; }
     });
     el('developer-button').addEventListener('click', () => { window.location.href = '/developer'; });

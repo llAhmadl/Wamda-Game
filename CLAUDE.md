@@ -32,8 +32,11 @@ Staging and production use the **same** Supabase database (`public.wamda_banks` 
 - Sounds are synthesized with Web Audio (no audio files); confetti is a canvas. Both are skipped for muted players and reduced motion.
 
 ## UI conventions
-- Arabic, RTL. Tajawal only (400/500/700, self-hosted WOFF2 with TTF fallback).
-- Accent `#87BDFF` (light) / `#FF6D42` (dark), errors `#FF4D4D`. Tokens on `:root` in `public/style.css`.
+- Arabic, RTL. Party-game look: ink outlines (`--ink`, `--line`), solid offset shadows, buttons that sink when pressed.
+- Fonts are self-hosted: Tajawal (400/500/700) for text, Baloo Bhaijaan 2 (variable, `--font-display`) for headings, buttons and numbers.
+- Light theme: sky page `#8FC7FF`, yellow actions `#FFD23F`. Dark theme: indigo page `#15103A`, flame actions `#FF6D42`. Tokens on `:root` in `public/style.css`.
+- Passing messages (`#site-error`, `#copy-message`, `#lobby-error`, `#home-error`, `.admin-message`) are fixed toasts; never let a message push the layout.
+- Players never receive question counts (lobby payload carries `available` / `enoughQuestions` booleans); counts are Developer Mode only.
 - Respect `prefers-reduced-motion` and `prefers-reduced-transparency`.
 - CSP is `'self'`: no inline scripts, no CDNs.
 - Keep the localStorage keys `firsthit-theme` and `wamda-session-v1` (existing players depend on them).

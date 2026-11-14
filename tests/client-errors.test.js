@@ -19,7 +19,7 @@ test('unexpected HTTP and socket errors hide details while expected validation r
         snapshot: () => ({}),
         refresh: async () => { throw Error('private database diagnostic'); },
         mutate: async () => { throw clientError('اختر بنكًا صالحًا.'); },
-        publicCategories: () => [{ id: 'test' }], availableQuestionCount: () => 20,
+        publicCategories: () => [{ id: 'test', available: true }], enoughQuestions: () => true,
         gameQuestions: () => { throw Error('private database diagnostic'); }
     };
     installMultiplayer(io, new Map(), store);

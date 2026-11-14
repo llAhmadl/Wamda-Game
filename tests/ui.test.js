@@ -11,6 +11,7 @@ const gameFiles = [...html.matchAll(/<script src="\/(game\/[\w-]+\.js)">/g)].map
 const gameCode = gameFiles.map(file => fs.readFileSync(path.join(publicDir, file), "utf8"));
 const themeCode = fs.readFileSync(path.join(publicDir, "theme.js"), "utf8");
 const nameCode = fs.readFileSync(path.join(publicDir, "name-validation.js"), "utf8");
+const settingsCode = fs.readFileSync(path.join(publicDir, "settings.js"), "utf8");
 
 // A deliberately small DOM double: these are logic checks, NOT browser/layout tests.
 class Element {
@@ -125,11 +126,13 @@ function setup({ saved = null, dark = false, blockedStorage = false, clipboardFa
         clearTimeout: id => timers.delete(id),
         navigator: { clipboard: { writeText: async value => { if (clipboardFails) throw Error("Clipboard blocked"); copied = value; } } },
         setInterval: callback => { intervals.set(++intervalId, callback); return intervalId; },
-        clearInterval: id => intervals.delete(id)
+        clearInterval: id => intervals.delete(id),
+        fetch: () => new Promise(() => {})
     });
     vm.runInContext(themeCode, context);
     vm.runInContext(nameCode, context);
     for (const code of gameCode) vm.runInContext(code, context);
+    vm.runInContext(settingsCode, context);
     socket.receive("sessionState", { session: session || { playerId: "host", reconnectToken: "test-token" }, state: null });
     function advance(ms) {
         clock += ms;
@@ -147,7 +150,7 @@ test("light/dark toggle persists, updates its label and restores before DOM read
     assert.equal(ui.document.documentElement.dataset.theme, "dark");
     assert.equal(ui.store.get("firsthit-theme"), "dark");
     assert.equal(ui.el("theme-label").textContent, "الوضع الفاتح");
-    assert.equal(ui.meta.content, "#000000");
+    assert.equal(ui.meta.content, "#2A2365");
     const reloaded = setup({ saved: "dark" });
     assert.equal(reloaded.document.documentElement.dataset.theme, "dark");
     await ui.el("theme-toggle").click();
@@ -355,10 +358,10 @@ test("another player wins: lock every choice without showing a false timeout", (
 const categoryLobby = (overrides = {}) => ({
     code: "ABCDE", hostId: "host", players: [{ id: "host", name: "أحمد" }], phase: "lobby",
     categories: [
-        { id: "science", name: "علوم", image: "/images/categories/science.svg", count: 12 },
-        { id: "history", name: "تاريخ", image: "/images/categories/history.svg", count: 9 }
+        { id: "science", name: "علوم", image: "/images/categories/science.svg", available: true },
+        { id: "history", name: "تاريخ", image: "/images/categories/history.svg", available: true }
     ],
-    selectedCategoryIds: [], scoringMode: 1, ...overrides
+    selectedCategoryIds: [], scoringMode: 1, enoughQuestions: false, ...overrides
 });
 
 test("category cards and scoring update only from server snapshots, support multiselect and removal", async () => {
@@ -377,21 +380,22 @@ test("category cards and scoring update only from server snapshots, support mult
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science"] }));
     assert.equal(cards[0].getAttribute("aria-pressed"), "true");
     assert.equal(cards[0].children[1].textContent, "✓");
-    assert.equal(ui.el("start-button").disabled, true, "12 questions cannot fill a 20-question match");
-    assert.match(ui.el("host-message").textContent, /تحتاج 20 سؤالًا/);
+    assert.equal(ui.el("start-button").disabled, true, "The selection cannot fill a match yet");
+    assert.equal(ui.el("host-message").textContent, "الأقسام المختارة ما تكفي لمباراة كاملة. أضف قسمًا آخر.");
     await cards[1].click();
     assert.deepEqual(Array.from(ui.socket.sent.at(-1).data.categoryIds), ["science", "history"]);
-    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], scoringMode: 3 }));
-    assert.match(ui.el("category-count").textContent, /21 سؤالًا/);
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], scoringMode: 3, enoughQuestions: true }));
+    assert.equal(ui.el("category-count").textContent, "قسمان محددان");
     assert.equal(ui.el("start-button").disabled, false);
-    assert.equal(cards[0].children[3].textContent, "12 سؤالًا");
+    assert.equal(cards[0].children[3].textContent, "", "Players never see how many questions a category holds");
+    assert.equal(cards[0].getAttribute("aria-label"), "علوم");
     assert.equal(ui.el("scoring-mode").value, "3");
     assert.match(ui.el("scoring-description").textContent, /نقطة واحدة/);
     await ui.el("scoring-mode").fire("change", { target: { value: "5" } });
     assert.equal(ui.socket.sent.at(-1).data.scoringMode, 5);
     await cards[0].click();
     assert.deepEqual(Array.from(ui.socket.sent.at(-1).data.categoryIds), ["history"]);
-    ui.socket.receive("lobbyUpdate", categoryLobby({ categories: [{ id: "history", name: "التاريخ الحديث", image: "/updated.webp", count: 20 }], selectedCategoryIds: ["history"] }));
+    ui.socket.receive("lobbyUpdate", categoryLobby({ categories: [{ id: "history", name: "التاريخ الحديث", image: "/updated.webp", available: true }], selectedCategoryIds: ["history"] }));
     assert.equal(ui.el("category-cards").children.length, 1);
     assert.equal(ui.el("category-cards").children[0].children[2].textContent, "التاريخ الحديث");
     assert.equal(ui.el("category-cards").children[0].children[0].src, "/updated.webp");
@@ -399,7 +403,7 @@ test("category cards and scoring update only from server snapshots, support mult
 
 test("empty categories cannot be picked but stay removable once chosen", async () => {
     const ui = setup();
-    const categories = [{ id: "science", name: "علوم", count: 25 }, { id: "empty", name: "فارغ", count: 0 }];
+    const categories = [{ id: "science", name: "علوم", available: true }, { id: "empty", name: "فارغ", available: false }];
     ui.socket.receive("lobbyUpdate", categoryLobby({ categories }));
     const cards = ui.el("category-cards").children;
     assert.equal(cards[1].disabled, true);
@@ -428,7 +432,7 @@ test("guests see selected categories and scoring but cannot submit settings, eve
 
 test("settings prevent overlapping requests and recover from server rejection; start errors stay visible", async () => {
     const ui = setup();
-    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"] }));
+    ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], enoughQuestions: true }));
     ui.socket.defer = true;
     const cards = ui.el("category-cards").children;
     await cards[1].click();
@@ -874,11 +878,12 @@ test("an invite link joins its room after the name and cleans the address bar", 
 test("lobby counts use correct Arabic number agreement", () => {
     const ui = setup();
     const text = state => { ui.socket.receive("lobbyUpdate", categoryLobby(state)); return ui.el("category-count").textContent; };
-    assert.match(text({ selectedCategoryIds: [], availableQuestionCount: 0 }), /^لم تختر أي قسم · لا توجد أسئلة متاحة/);
-    assert.match(text({ selectedCategoryIds: ["science"], availableQuestionCount: 1 }), /^قسم واحد محدد · سؤال واحد متاح/);
-    assert.match(text({ selectedCategoryIds: ["science", "history"], availableQuestionCount: 2 }), /^قسمان محددان · سؤالان متاحان/);
-    assert.match(text({ selectedCategoryIds: ["science"], availableQuestionCount: 7 }), /7 أسئلة متاحة/);
-    assert.match(text({ selectedCategoryIds: ["science"], availableQuestionCount: 21 }), /21 سؤالًا متاحًا/);
+    const many = Array.from({ length: 11 }, (_, i) => ({ id: `c${i}`, name: `قسم ${i}`, available: true }));
+    assert.equal(text({ selectedCategoryIds: [] }), "لم تختر أي قسم");
+    assert.equal(text({ selectedCategoryIds: ["science"] }), "قسم واحد محدد");
+    assert.equal(text({ selectedCategoryIds: ["science", "history"], enoughQuestions: true }), "قسمان محددان");
+    assert.equal(text({ categories: many, selectedCategoryIds: many.slice(0, 3).map(c => c.id) }), "3 أقسام محددة");
+    assert.equal(text({ categories: many, selectedCategoryIds: many.map(c => c.id) }), "11 قسمًا محددًا");
     assert.equal(vm.runInContext("[0, 1, 2, 3, 10, 11, 103].map(pointsText).join('|')", ui.context), "0 نقطة|نقطة واحدة|نقطتان|3 نقاط|10 نقاط|11 نقطة|103 نقاط");
 });
 
@@ -967,4 +972,108 @@ test("play again: the host restarts from the final results and everyone returns 
     assert.match(guest.el("round-message").textContent, /مباراة جديدة/);
     guest.socket.receive("lobbyUpdate", categoryLobby({ phase: "lobby" }));
     assert.ok(!guest.el("lobby-screen").classList.contains("hidden"));
+});
+
+test("the lobby shows no question numbers, whatever the server sends", () => {
+    const ui = setup();
+    // Old payload fields must be ignored rather than rendered.
+    ui.socket.receive("lobbyUpdate", categoryLobby({
+        categories: [{ id: "science", name: "علوم", available: true, count: 37 }, { id: "empty", name: "فارغ", available: false, count: 0 }],
+        selectedCategoryIds: ["science"], availableQuestionCount: 37, requiredQuestions: 20
+    }));
+    const cards = ui.el("category-cards").children;
+    const shown = [ui.el("category-count").textContent, ui.el("host-message").textContent,
+        ...cards.flatMap(card => [card.textContent, card.getAttribute("aria-label")])].join(" | ");
+    assert.doesNotMatch(shown, /\d|سؤالًا|أسئلة متاحة/);
+    assert.equal(cards[1].children[3].textContent, "لا توجد أسئلة");
+    assert.equal(cards[1].getAttribute("aria-label"), "فارغ · لا توجد أسئلة");
+    assert.equal(ui.el("start-button").disabled, true, "Without enoughQuestions the match cannot start");
+});
+
+const nameTaken = { ok: false, code: "NAME_TAKEN", message: "في الغرفة لاعب بنفس اسمك. غيّر اسمك لتدخل." };
+async function enterName(ui, name = "سارة") {
+    ui.el("name-input").value = name;
+    await ui.el("play-button").click();
+}
+async function rename(ui, name) {
+    // Like the server, acknowledge with the saved name unless a test set a rejection.
+    if (ui.socket.replies.changeName?.ok !== false) ui.socket.replies.changeName = { ok: true, name };
+    ui.el("rename-input").value = name;
+    await ui.el("rename-form").fire("submit", { preventDefault() {} });
+}
+
+test("a taken name opens the rename dialog, keeps the code and retries the join after renaming", async () => {
+    const ui = setup();
+    await enterName(ui);
+    ui.el("room-code-input").value = "qwert";
+    ui.socket.replies.joinRoom = nameTaken;
+    await ui.el("join-button").click();
+    await Promise.resolve();
+    const dialog = ui.el("rename-dialog");
+    assert.equal(dialog.open, true);
+    assert.equal(ui.el("rename-input").value, "سارة");
+    assert.equal(ui.el("rename-error").textContent, nameTaken.message);
+    assert.equal(ui.el("rename-error").classList.contains("sr-only"), false, "The reason is visible in the dialog");
+    assert.equal(ui.el("room-code-input").value, "qwert", "The typed code is kept");
+    assert.equal(ui.el("room-code-input").getAttribute("aria-invalid"), null, "Not a room-code error");
+    assert.equal(ui.el("home-error").textContent, "");
+    assert.ok(ui.el("lobby-screen").classList.contains("hidden"));
+
+    // Still taken after the first rename: the dialog comes back with the message.
+    await rename(ui, "سارة ٢");
+    await Promise.resolve();
+    assert.deepEqual(ui.socket.sent.slice(-2).map(m => [m.event, m.data.name, m.data.code]), [["changeName", "سارة ٢", undefined], ["joinRoom", "سارة ٢", "QWERT"]]);
+    assert.equal(dialog.open, true);
+    assert.equal(ui.el("rename-error").textContent, nameTaken.message);
+
+    delete ui.socket.replies.joinRoom;
+    await rename(ui, "نورة");
+    assert.equal(JSON.stringify(ui.socket.sent.at(-1)), JSON.stringify({ event: "joinRoom", data: { name: "نورة", code: "QWERT" } }));
+    assert.equal(dialog.open, false);
+    assert.equal(ui.el("player-name").textContent, "نورة");
+    assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
+    assert.equal(ui.el("room-code").textContent, "QWERT");
+});
+
+test("closing the taken-name dialog stays home with the code; a later menu rename does not join", async () => {
+    const ui = setup();
+    await enterName(ui);
+    ui.el("room-code-input").value = "QWERT";
+    ui.socket.replies.joinRoom = nameTaken;
+    await ui.el("join-button").click();
+    await Promise.resolve();
+    ui.el("rename-dialog").close();
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+    assert.equal(ui.el("room-code-input").value, "QWERT");
+    delete ui.socket.replies.joinRoom;
+    await ui.el("rename-button").click();
+    assert.equal(ui.el("rename-error").textContent, "", "The menu dialog opens clean");
+    await rename(ui, "نورة");
+    assert.equal(ui.socket.sent.at(-1).event, "changeName");
+    assert.equal(ui.el("home-screen").classList.contains("hidden"), false);
+});
+
+test("an invite link with a taken name asks for a new name, then joins the invited room", async () => {
+    const ui = setup({ search: "?room=abcde" });
+    ui.socket.replies.joinRoom = nameTaken;
+    await enterName(ui);
+    await Promise.resolve();
+    assert.equal(ui.el("rename-dialog").open, true);
+    assert.equal(ui.el("rename-error").textContent, nameTaken.message);
+    delete ui.socket.replies.joinRoom;
+    await rename(ui, "نورة");
+    assert.equal(JSON.stringify(ui.socket.sent.at(-1)), JSON.stringify({ event: "joinRoom", data: { name: "نورة", code: "ABCDE" } }));
+    assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
+});
+
+test("a menu rename rejected in the lobby shows the server message and keeps the name", async () => {
+    const ui = setup();
+    await enterName(ui);
+    ui.socket.receive("lobbyUpdate", categoryLobby());
+    await ui.el("rename-button").click();
+    ui.socket.replies.changeName = { ok: false, code: "NAME_TAKEN", message: "في الغرفة لاعب بنفس هذا الاسم. اختر اسمًا آخر." };
+    await rename(ui, "أحمد");
+    assert.equal(ui.el("rename-error").textContent, "في الغرفة لاعب بنفس هذا الاسم. اختر اسمًا آخر.");
+    assert.equal(ui.el("rename-dialog").open, true);
+    assert.equal(ui.el("player-name").textContent, "سارة");
 });

@@ -52,6 +52,13 @@ test("two real clients: all questions, scores, host transfer and question timeou
         assert.equal(response.status, 200, file);
     }
 
+    // Scripts revalidate on every load, and an unchanged file is not downloaded again.
+    const script = await fetch(baseUrl + "/game/core.js");
+    assert.equal(script.headers.get("cache-control"), "no-cache");
+    // Set Cache-Control like a browser reload; fetch would otherwise add no-cache to a conditional request.
+    const revalidated = await fetch(baseUrl + "/game/core.js", { headers: { "If-None-Match": script.headers.get("etag"), "Cache-Control": "max-age=0" } });
+    assert.equal(revalidated.status, 304);
+
     const versionResponse = await fetch(baseUrl + "/api/version");
     assert.equal(versionResponse.headers.get("cache-control"), "no-store");
     assert.deepEqual(await versionResponse.json(), { version: require("../package.json").version, rounds: 2, questionsPerRound: 10, duration: 20 });
@@ -112,7 +119,9 @@ test("two real clients: all questions, scores, host transfer and question timeou
         if (round === 0) {
             const wrong = nextEvent(guest, "answerResult");
             guest.emit("submitAnswer", { code: created.code, gameId: a.gameId, questionId: round, answerIndex: (correct + 1) % 4 });
-            assert.equal((await wrong).correct, false, "A wrong answer must not award a point or end the question");
+            const wrongResult = await wrong;
+            assert.equal(wrongResult.correct, false, "A wrong answer must not award a point or end the question");
+            assert.ok(!("correctIndex" in wrongResult), "The correct choice must not reach a player before the question closes");
         }
         // Both clients race with a correct answer. The server must choose exactly one.
         const first = round === 1 ? guest : host;

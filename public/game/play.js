@@ -95,15 +95,13 @@ function submitAnswer(answerIndex, selectedButton) {
     socket.emit("submitAnswer", { code: currentRoom, answerIndex, questionId, gameId });
 }
 
+// Only the player's own choice is marked; the correct one arrives with questionClosed.
 function renderAnswer(data) {
-    const correctButton = choicesContainer.querySelectorAll("button")[data.correctIndex];
-    correctButton?.classList.add("is-correct");
     const selected = choicesContainer.querySelector(".selected");
     selected?.classList.add(data.correct ? "is-correct" : "is-wrong");
     // Keep feedback visual, with labels available to screen readers.
     answerMessage.textContent = "";
-    if (correctButton) correctButton.setAttribute("aria-label", `${correctButton.textContent}، الإجابة الصحيحة`);
-    if (selected && !data.correct) selected.setAttribute("aria-label", `${selected.textContent}، إجابتك خاطئة`);
+    if (selected) selected.setAttribute("aria-label", `${selected.textContent}، ${data.correct ? "إجابتك صحيحة" : "إجابتك خاطئة"}`);
 }
 // Only live answers make a sound; restored snapshots stay quiet.
 socket.on("answerResult", data => { renderAnswer(data); sound.play(data.correct ? "correct" : "wrong"); });

@@ -233,12 +233,14 @@ test("answers submit once, selected wrong answers are not marked correct", async
     await choices[0].click();
     assert.equal(ui.socket.sent.filter(e => e.event === "submitAnswer").length, 1);
     assert.ok(choices.every(choice => choice.disabled));
-    ui.socket.receive("answerResult", { correct: false, correctIndex: 1 });
+    ui.socket.receive("answerResult", { correct: false });
     assert.ok(choices[0].classList.contains("is-wrong"));
-    assert.ok(choices[1].classList.contains("is-correct"));
+    assert.ok(choices.every(choice => !choice.classList.contains("is-correct")), "The correct choice waits for questionClosed");
     assert.equal(ui.el("answer-message").textContent, "");
-    assert.ok(!choices[0].classList.contains("is-correct"));
     assert.equal(choices[0].children[1].textContent, "One");
+    ui.socket.receive("questionClosed", { correctIndex: 1, lastInRound: false, reason: "timeout" });
+    assert.ok(choices[1].classList.contains("is-correct"));
+    assert.ok(!choices[0].classList.contains("is-correct"));
 });
 
 test("timer closes unanswered choices; equal scores share rank", () => {
@@ -508,7 +510,7 @@ test("brief outages stay invisible; sustained recovery locks page until server s
 
 test("restored accepted answers cannot be submitted again and review/results use current state", async () => {
     const ui = setup();
-    restore(ui, recoveryState({ answer: { answerIndex: 1, correct: false, correctIndex: 0, awardedPoints: 0 } }));
+    restore(ui, recoveryState({ answer: { answerIndex: 1, correct: false, awardedPoints: 0 } }));
     assert.ok(ui.el("choices").children.every(button => button.disabled));
     assert.ok(ui.el("choices").children[1].classList.contains("selected"));
     assert.ok(ui.el("choices").children[1].classList.contains("is-wrong"));

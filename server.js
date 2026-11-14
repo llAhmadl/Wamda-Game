@@ -78,7 +78,8 @@ app.get("/developer", (req, res) => {
 });
 app.get("/favicon.png", (req, res) => res.sendFile(path.join(__dirname, "favicon.png")));
 app.use(express.static(path.join(__dirname, "public"), {
-    setHeaders(res, filename) { res.set("Cache-Control", /\.(webp|svg|ttf|woff2)$/.test(filename) ? "public, max-age=3600" : "no-store"); }
+    // no-cache still revalidates every load, but an unchanged file answers 304 via ETag.
+    setHeaders(res, filename) { res.set("Cache-Control", /\.(webp|svg|ttf|woff2)$/.test(filename) ? "public, max-age=3600" : "no-cache"); }
 }));
 
 // -------------------------

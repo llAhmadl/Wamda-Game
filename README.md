@@ -32,17 +32,6 @@ To use Developer Mode locally, copy `.env.example` to `.env`, set `ADMIN_CODE`, 
 node --env-file=.env server.js
 ```
 
-## Configuration
-
-| Variable | Purpose |
-| --- | --- |
-| `ADMIN_CODE` | Developer Mode password. Required in production, 12–256 characters. |
-| `DATABASE_URL` | PostgreSQL connection string for question banks and category images. |
-| `ALLOWED_ORIGINS` | Comma-separated HTTPS origins allowed to open a socket. Required in production. |
-| `NODE_ENV` | Set to `production` on the server. |
-
-The server never creates tables. Run the SQL files in [`migrations/`](migrations) manually before the first deploy.
-
 ## Developer Mode
 
 Available at `/developer`. It manages question banks, categories and images, imports and exports JSON, and shows live players and rooms. Question counts are only visible here. Players never receive them.

@@ -619,14 +619,14 @@ test('a room never holds two players with the same name: join and rename are ref
     // Case and invisible characters do not make a name different.
     for (const name of ['Ahmad', 'AHMAD', ' ahmad\u200b ']) {
         assert.deepEqual(await request(guest, 'joinRoom', { code, name }),
-            { ok: false, code: 'NAME_TAKEN', message: 'في الغرفة لاعب بنفس اسمك. غيّر اسمك لتدخل.' });
+            { ok: false, code: 'NAME_TAKEN', message: 'بالغرفة في لاعب نفس اسمك، غيّر اسمك عشان تدخل 👀' });
     }
     assert.equal(f.rooms.get(code).players.size, 1);
     assert.equal((await request(guest, 'syncState')).state, null);
 
     // A refused join does not pull the player out of the room they are in.
     assert.deepEqual(await request(other, 'joinRoom', { code, name: 'ahmad' }),
-        { ok: false, code: 'NAME_TAKEN', message: 'في الغرفة لاعب بنفس اسمك. غيّر اسمك لتدخل.' });
+        { ok: false, code: 'NAME_TAKEN', message: 'بالغرفة في لاعب نفس اسمك، غيّر اسمك عشان تدخل 👀' });
     assert.equal((await snapshot(other)).code, elsewhere.code);
 
     assert.equal((await request(guest, 'joinRoom', { code, name: 'سارة' })).ok, true);

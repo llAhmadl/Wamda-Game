@@ -990,7 +990,7 @@ test("the lobby shows no question numbers, whatever the server sends", () => {
     assert.equal(ui.el("start-button").disabled, true, "Without enoughQuestions the match cannot start");
 });
 
-const nameTaken = { ok: false, code: "NAME_TAKEN", message: "في الغرفة لاعب بنفس اسمك. غيّر اسمك لتدخل." };
+const nameTaken = { ok: false, code: "NAME_TAKEN", message: "بالغرفة في لاعب نفس اسمك، غيّر اسمك عشان تدخل 👀" };
 async function enterName(ui, name = "سارة") {
     ui.el("name-input").value = name;
     await ui.el("play-button").click();
@@ -1033,6 +1033,25 @@ test("a taken name opens the rename dialog, keeps the code and retries the join 
     assert.equal(ui.el("player-name").textContent, "نورة");
     assert.equal(ui.el("lobby-screen").classList.contains("hidden"), false);
     assert.equal(ui.el("room-code").textContent, "QWERT");
+});
+
+test("saving the same taken name keeps the dialog open and shakes it without asking the server", async () => {
+    const ui = setup();
+    await enterName(ui);
+    ui.el("room-code-input").value = "QWERT";
+    ui.socket.replies.joinRoom = nameTaken;
+    await ui.el("join-button").click();
+    await Promise.resolve();
+    const sent = ui.socket.sent.length;
+    ui.el("rename-input").value = "  سارة ";
+    await ui.el("rename-form").fire("submit", { preventDefault() {} });
+    const dialog = ui.el("rename-dialog");
+    assert.equal(dialog.open, true);
+    assert.ok(dialog.classList.contains("is-shaking"));
+    assert.equal(ui.el("rename-error").textContent, nameTaken.message);
+    assert.equal(ui.socket.sent.length, sent, "Nothing is sent for an unchanged name");
+    await dialog.fire("animationend", { animationName: "shake", currentTarget: dialog });
+    assert.equal(dialog.classList.contains("is-shaking"), false);
 });
 
 test("closing the taken-name dialog stays home with the code; a later menu rename does not join", async () => {

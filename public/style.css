@@ -133,8 +133,10 @@
 
 /* ---------- Base ---------- */
 * { box-sizing: border-box; }
-/* The scrollbar keeps its lane, so opening a dialog never nudges the page sideways. */
-html { scrollbar-gutter: stable; }
+/* No lane is reserved by default: an empty lane showed the sky beside the white header.
+   While a dialog is open the page stops scrolling; a page that had a scrollbar (page.js marks it)
+   keeps that scrollbar's lane, so nothing shifts sideways. */
+html.page-scrolls:has(dialog[open]) { scrollbar-gutter: stable; }
 body {
     position: relative;
     isolation: isolate;
@@ -479,7 +481,7 @@ button:disabled { cursor: not-allowed; }
     -webkit-user-select: all;
 }
 .player { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 12px 0; }
-.player-name { min-width: 0; font-size: 16px; font-weight: 500; unicode-bidi: plaintext; }
+.player-name { min-width: 0; font-size: 16px; font-weight: 500; unicode-bidi: plaintext; text-align: right; }
 .host { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 3px 10px 1px; border: 2px solid var(--ink); border-radius: var(--radius-pill); background: var(--pop); color: var(--pop-text); font-family: var(--font-display); font-size: 13px; font-weight: 800; line-height: 1.4; rotate: -3deg; }
 
 /* ---------- Sticky actions ----------
@@ -629,7 +631,7 @@ button:disabled { cursor: not-allowed; }
 #answer-leaders { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
 .answer-leader { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 12px; min-height: 48px; padding: 6px 10px; border: 2px dashed var(--border); border-radius: var(--shape-control); color: var(--muted); font-size: 16px; }
 .answer-rank { display: grid; place-items: center; width: 32px; height: 32px; padding-top: 2px; border: 2px solid var(--border); border-radius: 50%; direction: ltr; font-family: var(--font-display); font-size: 15px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-.answer-player { min-width: 0; overflow-wrap: break-word; text-align: right; font-weight: 500; }
+.answer-player { min-width: 0; justify-self: stretch; overflow-wrap: break-word; text-align: right; font-weight: 500; }
 /* Winning places: a crown for the first, a distinct color for each other place. */
 .answer-leader.is-filled { --place: var(--accent); border: 2px solid var(--ink); background: color-mix(in srgb, var(--place) 55%, var(--surface)); color: var(--text); animation: pop 420ms var(--ease-bounce); }
 .answer-leader.is-filled .answer-rank { position: relative; border-color: var(--ink); background: var(--place); color: var(--on-fill); }
@@ -645,7 +647,9 @@ button:disabled { cursor: not-allowed; }
 /* ---------- Results ---------- */
 .results { display: grid; gap: 12px; margin: 8px 0 24px; }
 .result-row { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 60px; padding: 10px 14px; border: 2px solid var(--ink); border-radius: 18px 18px 4px 18px; background: var(--surface-muted); font-size: 17px; }
-.result-row > span:nth-child(2) { min-width: 0; font-weight: 500; overflow-wrap: break-word; unicode-bidi: plaintext; }
+/* Names keep their own direction (plaintext) but always sit on the right, whatever their script:
+   with plaintext, "start" would put a Latin name on the left. */
+.result-row > span:nth-child(2) { min-width: 0; font-weight: 500; overflow-wrap: break-word; unicode-bidi: plaintext; text-align: right; }
 .result-row.winner { min-height: 76px; box-shadow: var(--shadow-small); font-size: 20px; transition: background-color 600ms ease; }
 .result-row[class*="place-"] { background: color-mix(in srgb, var(--place) 55%, var(--surface)); }
 .result-row.winner > span:nth-child(2) { font-family: var(--font-display); font-weight: 700; }
@@ -699,6 +703,9 @@ button:disabled { cursor: not-allowed; }
 @keyframes backdrop-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes backdrop-out { from { opacity: var(--menu-backdrop-from, 1); } to { opacity: 0; } }
 
+/* Developer Mode's player list (categories-admin.css): names on the right too. */
+.admin-player bdi { min-width: 0; text-align: right; }
+
 /* ---------- Dialogs ---------- */
 .settings-dialog { width: min(460px, calc(100% - 32px)); max-height: calc(100dvh - 40px); padding: 22px; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); color: var(--text); box-shadow: var(--shadow-raised); }
 .settings-dialog[open] { animation: dialog-in 380ms var(--ease-bounce); }
@@ -721,7 +728,46 @@ button:disabled { cursor: not-allowed; }
 /* The dialog keeps one line for its message, so a rejected name never resizes it. */
 #rename-form :is(.error, .helper-message) { display: block; min-height: 26px; }
 #rename-form .sr-only { min-height: 0; }
+/* Saving the same taken name again: the dialog shakes instead of closing. */
+#rename-dialog.is-shaking { animation: shake 380ms ease; }
 .settings-dialog form { padding-bottom: 5px; }
+
+/* ---------- Feature band ----------
+   One card under the name and home screens only: three things that make the game, split by
+   the same dashed rule as the home "أو". Stacked on phones, one row on wide screens. */
+.features { display: none; width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
+body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: block; }
+.features-list { display: grid; margin: 0; padding: 4px var(--panel-pad); list-style: none; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); box-shadow: var(--shadow); }
+.feature { display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 16px; padding: 20px 0; }
+.feature + .feature { border-top: 2px dashed var(--border); }
+.feature-icon { grid-row: 1 / span 2; display: grid; place-items: center; width: 52px; height: 52px; border: var(--line) solid var(--ink); border-radius: 16px 16px 4px 16px; background: var(--candy-yellow); color: var(--on-fill); box-shadow: 0 3px 0 var(--ink); rotate: -4deg; }
+.feature:nth-child(2) .feature-icon { background: var(--candy-blue); rotate: 3deg; }
+.feature:nth-child(3) .feature-icon { background: var(--candy-mint); rotate: -2deg; }
+.feature-icon svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.feature h2 { padding-top: 4px; font-size: 20px; line-height: 1.35; }
+.feature p { margin-top: 4px; color: var(--muted); font-size: 15px; line-height: 1.75; }
+@media (min-width: 900px) {
+    .features { padding-inline: 32px; }
+    .features-list { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 26px 0 28px; }
+    /* Each column: badge on top, then the title and its line. */
+    .feature { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; align-content: start; padding: 2px 30px; }
+    .feature-icon { grid-row: auto; margin-bottom: 14px; }
+    .feature + .feature { border-top: 0; border-inline-start: 2px dashed var(--border); }
+}
+/* Scroll reveal: only once page.js can watch the band, and only when motion is welcome.
+   The card rises in, then its three items follow one after another; each badge lands with a
+   small bounce, like the hero sticker. Without page.js everything is simply there. */
+@media (prefers-reduced-motion: no-preference) {
+    .reveal-ready .features-list { transition: opacity 700ms var(--ease-page), transform 700ms var(--ease-page); }
+    .reveal-ready .feature { transition: opacity 700ms var(--ease-page) var(--reveal-delay), transform 700ms var(--ease-page) var(--reveal-delay); }
+    .reveal-ready .feature-icon { transition: transform 620ms var(--ease-bounce) calc(var(--reveal-delay) + 140ms); }
+    .reveal-ready .feature:nth-child(1) { --reveal-delay: 120ms; }
+    .reveal-ready .feature:nth-child(2) { --reveal-delay: 240ms; }
+    .reveal-ready .feature:nth-child(3) { --reveal-delay: 360ms; }
+    .reveal-ready .features-list:not(.is-visible) { opacity: 0; transform: translateY(28px); }
+    .reveal-ready .features-list:not(.is-visible) .feature { opacity: 0; transform: translateY(16px); }
+    .reveal-ready .features-list:not(.is-visible) .feature-icon { transform: scale(.6); }
+}
 
 /* ---------- Footer & overlays ---------- */
 .site-footer { flex-shrink: 0; padding: 20px 20px max(24px, env(safe-area-inset-bottom, 0px)); color: var(--page-muted); font-size: 13px; font-weight: 400; text-align: center; }
@@ -803,6 +849,10 @@ button:disabled { cursor: not-allowed; }
     .result-row { padding: 8px 10px; gap: 8px; }
     .settings-dialog { padding: 18px; }
     .hero-mark { padding-inline: 20px; }
+    .features { padding-inline: 12px; }
+    .feature { grid-template-columns: 44px minmax(0, 1fr); column-gap: 12px; }
+    .feature-icon { width: 44px; height: 44px; }
+    .feature-icon svg { width: 22px; height: 22px; }
 }
 /* Phones turned sideways: question on one side, choices on the other, all in one screen. */
 @media (orientation: landscape) and (max-height: 520px) {

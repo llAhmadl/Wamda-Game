@@ -55,8 +55,10 @@
     // Runs once after the next saved name; home.js uses it to retry a join
     // that the room refused because the name was taken.
     let afterRename = null;
+    let renameMessage = '';
     async function openRenameDialog(message = '', onRenamed = null) {
         afterRename = onRenamed;
+        renameMessage = message;
         el('rename-input').value = playerName;
         renameField.clear();
         el('rename-error').textContent = message;
@@ -64,12 +66,28 @@
         el('rename-input').focus();
     }
     globalThis.openRenameDialog = openRenameDialog;
+    function shake(element) {
+        element.classList.remove('is-shaking');
+        void element.offsetWidth;
+        element.classList.add('is-shaking');
+    }
+    el('rename-dialog').addEventListener('animationend', event => {
+        if (event.animationName === 'shake') event.currentTarget.classList.remove('is-shaking');
+    });
     el('rename-button').addEventListener('click', () => openRenameDialog());
     el('rename-form').addEventListener('submit', async event => {
         event.preventDefault();
         const name = cleanPlayerName(el('rename-input').value);
         if (!name) {
             renameField.reject();
+            return;
+        }
+        // Opened because the room already has this name: saving it unchanged would only be
+        // refused again, so keep the dialog open and shake it instead of closing.
+        if (afterRename && name.toLocaleLowerCase('en-US') === playerName.toLocaleLowerCase('en-US')) {
+            el('rename-error').textContent = renameMessage;
+            shake(el('rename-dialog'));
+            el('rename-input').focus();
             return;
         }
         try {

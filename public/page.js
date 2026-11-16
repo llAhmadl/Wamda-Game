@@ -3,21 +3,29 @@
 (() => {
     const root = document.documentElement;
 
-    // Feature band: rises into view the first time it is scrolled to (or at once if already
-    // on screen); style.css staggers its items. Without IntersectionObserver, or with reduced
-    // motion, nothing is hidden at all.
+    // Scroll reveal: every [data-reveal] element rises into view the first time it is scrolled to
+    // (or at once if it is already on screen). Elements that arrive in the same moment are numbered
+    // in page order (data-reveal-step) and style.css plays them one after another.
+    // Without IntersectionObserver, or with reduced motion, nothing is hidden at all.
+    const MAX_STEP = 4;
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if ("IntersectionObserver" in window && !reducedMotion) {
         root.classList.add("reveal-ready");
         document.addEventListener("DOMContentLoaded", () => {
             try {
                 const observer = new IntersectionObserver(entries => {
-                    for (const entry of entries) {
-                        if (!entry.isIntersecting) continue;
-                        entry.target.classList.add("is-visible");
-                        observer.unobserve(entry.target);
-                    }
-                }, { rootMargin: "0px 0px -6% 0px", threshold: 0.15 });
+                    const arriving = entries
+                        .filter(entry => entry.isIntersecting && (entry.intersectionRatio >= 0.2 || entry.intersectionRect.height >= 120))
+                        .map(entry => entry.target)
+                        .sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+                    arriving.forEach((target, index) => {
+                        if (index > 0) target.dataset.revealStep = String(Math.min(index, MAX_STEP));
+                        target.classList.add("is-visible");
+                        observer.unobserve(target);
+                    });
+                // Trigger a little above the bottom edge, once a fifth of the piece (or 120px of a
+                // very tall one) is in view, so it is seen arriving, not found already finished.
+                }, { rootMargin: "0px 0px -10% 0px", threshold: [0, 0.1, 0.2] });
                 document.querySelectorAll("[data-reveal]").forEach(item => observer.observe(item));
             } catch {
                 root.classList.remove("reveal-ready");

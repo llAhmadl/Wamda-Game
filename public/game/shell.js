@@ -49,7 +49,7 @@ el("home-logo").addEventListener("click", () => {
             finishRecovery();
             return;
         }
-        el("site-error").textContent = "تعذرت العودة لصفحة الاسم. حاول مجددًا بعد عودة الاتصال.";
+        showSiteError("تعذرت العودة لصفحة الاسم. حاول مجددًا بعد عودة الاتصال.");
         // The departure may have reached the server even if its acknowledgement was
         // lost. Resolve that from a fresh snapshot before enabling interaction.
         synchronize();

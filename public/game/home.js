@@ -22,7 +22,7 @@ function requestRoom(event, data, onError) {
     socket.timeout(10000).emit(event, data, (error, response) => {
         roomRequestPending = false;
         createButton.disabled = joinButton.disabled = false;
-        if (error) { homeError.textContent = "تعذر الوصول للخادم. حاول مرة أخرى."; return; }
+        if (error) { showError("تعذر الوصول للخادم. حاول مرة أخرى.", "home", homeError); return; }
         if (!response?.ok) { onError(response?.message || "تعذر إكمال الطلب. حاول مرة أخرى.", response?.code); return; }
         currentRoom = response.code;
         roomCodeText.textContent = currentRoom;
@@ -31,7 +31,7 @@ function requestRoom(event, data, onError) {
 }
 createButton.addEventListener("click", () => {
     clearRoomCodeError();
-    requestRoom("createRoom", { name: playerName }, message => { homeError.textContent = message; });
+    requestRoom("createRoom", { name: playerName }, message => showError(message, "home", homeError));
 });
 
 const roomCodePlaceholder = roomCodeInput.getAttribute("placeholder");
@@ -55,6 +55,8 @@ function joinRoom() {
     const code = roomCodeInput.value.trim().toUpperCase();
     if (!code) { showRoomCodeError(roomCodePlaceholder); return; }
     requestRoom("joinRoom", { name: playerName, code }, (message, reason) => {
+        // The room exists but is mid-match: keep the code so the player can try again later.
+        if (reason === "MATCH_RUNNING") { roomCodeInput.value = code; showError(message, "home", homeError); return; }
         if (reason !== "NAME_TAKEN") { showRoomCodeError(message); return; }
         // Someone in that room has this name: keep the code, ask for another
         // name (settings.js owns the dialog) and join again once it is saved.
@@ -65,13 +67,28 @@ joinButton.addEventListener("click", joinRoom);
 roomCodeInput.addEventListener("keydown", event => { if (event.key === "Enter") joinRoom(); });
 
 // An invite link (/?room=CODE) fills the code and joins once the player has a name.
+// A player still in another room (rooms live for a day) is asked before moving;
+// mid-match the invite waits for them to finish instead.
 let inviteCode = /[?&]room=([A-Za-z0-9]{5})(?:&|$)/.exec(window.location.search || "")?.[1]?.toUpperCase() || null;
-function joinInvite() {
+function joinInviteCode(code) {
+    roomCodeInput.value = code;
+    joinRoom();
+}
+async function joinInvite() {
     if (!inviteCode || !playerName || !socket.connected || !connectionReady) return;
     const code = inviteCode;
     inviteCode = null;
     try { window.history?.replaceState(null, "", "/"); } catch { /* The code still works without a clean URL. */ }
-    if (currentRoom) return;
-    roomCodeInput.value = code;
-    joinRoom();
+    if (currentRoom === code) return;
+    if (!currentRoom) { joinInviteCode(code); return; }
+    if (isActiveGame()) { showSiteError("خلّص مباراتك أول، بعدين افتح رابط الدعوة"); return; }
+    // The code is Latin: isolate it so the question mark stays at the end of the sentence.
+    const move = await confirmAction("تنتقل لغرفة ثانية؟", `تطلع من غرفتك الحالية وتدخل غرفة \u2066${code}\u2069؟`, "انتقال");
+    // The match may have started or the room changed while the dialog was open.
+    if (!move || !currentRoom || currentRoom === code || isActiveGame() || !isConnected()) return;
+    socket.timeout(10000).emit("leaveRoom", {}, (error, response) => {
+        if (error || !response?.ok) { showSiteError(response?.message || "تعذر الخروج من غرفتك الحالية. حاول مرة ثانية."); return; }
+        clearRoom();
+        joinInviteCode(code);
+    });
 }

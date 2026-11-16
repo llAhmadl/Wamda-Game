@@ -4,6 +4,9 @@ let displayedWinnerCount = 0;
 let answerLeadersSignature = null;
 let answerBoardKey = null;
 let lastTick = null;
+// The last questionClosed data, and a refused answer's note, for the current question only.
+let lastReview = null;
+let refusedNote = "";
 const questionImage = el("question-image");
 
 function setTimerState(state) { timerElement.parentElement.dataset.state = state; }
@@ -25,6 +28,8 @@ function renderQuestion(data) {
     showScreen("game");
     answerMessage.textContent = "";
     answerMessage.className = "answer-message";
+    lastReview = null;
+    refusedNote = "";
     el("question-number").textContent = `الجولة ${["الأولى", "الثانية"][data.round - 1] || data.round} | سؤال ${data.number}`;
     el("question-text").textContent = data.question;
     if (data.image) { questionImage.src = data.image; questionImage.classList.remove("hidden"); }
@@ -99,7 +104,32 @@ function submitAnswer(answerIndex, selectedButton) {
     selectedButton.classList.add("selected");
     selectedButton.setAttribute("aria-pressed", "true");
     answerMessage.textContent = "تم إرسال إجابتك.";
-    socket.emit("submitAnswer", { code: currentRoom, answerIndex, questionId, gameId });
+    const sentGame = gameId, sentQuestion = questionId;
+    // Acceptance arrives as answerResult; the acknowledgement only matters when the answer was refused.
+    socket.timeout(10000).emit("submitAnswer", { code: currentRoom, answerIndex, questionId, gameId }, (error, response) => {
+        if (error || response?.ok || sentGame !== gameId || sentQuestion !== questionId) return;
+        if (response?.code === "TOO_LATE") refuseAnswer("وصلت إجابتك بعد انتهاء الوقت ⏱️");
+        else if (response?.code === "CLOSED") refuseAnswer("انقفل السؤال قبل ما توصل إجابتك.");
+    });
+}
+// A refused answer never counted: drop its selection so the review cannot show it
+// as the player's own (possibly correct) answer, and say why it earned nothing.
+function refuseAnswer(note) {
+    refusedNote = note;
+    const selected = choicesContainer.querySelector(".selected");
+    if (selected) {
+        selected.classList.remove("selected", "is-wrong");
+        selected.setAttribute("aria-pressed", "false");
+        selected.removeAttribute("aria-label");
+    }
+    answerMessage.textContent = refusedText(lastReview);
+}
+// The refusal note, then what the review adds: the correct choice when nobody won
+// (never "time is up" twice), otherwise the usual winners line.
+function refusedText(review) {
+    if (!review) return refusedNote;
+    const nobody = !review.winners?.length && !review.winner;
+    return `${refusedNote} ${nobody ? correctChoiceText(review) : reviewText(review)}`.trim();
 }
 
 // Only the player's own choice is marked; the correct one arrives with questionClosed.
@@ -127,17 +157,25 @@ function renderReview(data) {
     });
     const selected = choicesContainer.querySelector(".selected");
     if (selected && Array.from(buttons).indexOf(selected) !== data.correctIndex) selected.classList.add("is-wrong");
-    // "+1" is wrapped in a left-to-right isolate so RTL text never shows it as "1+".
+    if (!data.winners?.length && !data.winner && data.reason !== "answered") timerElement.textContent = "0";
+    lastReview = data;
+    answerMessage.textContent = refusedNote ? refusedText(data) : reviewText(data);
+    updateControls();
+}
+// "+1" is wrapped in a left-to-right isolate so RTL text never shows it as "1+".
+// With no winner the correct choice is named, first-strong isolated for mixed scripts.
+function reviewText(data) {
     if (data.winners?.length) {
         const earned = data.winners.find(winner => winner.id === playerId);
-        answerMessage.textContent = earned ? `إجابة صحيحة! ⁦+${earned.awardedPoints}⁩ نقطة` : `أجاب ${playersText(data.winners.length)} إجابة صحيحة.`;
-    } else if (data.winner) {
-        answerMessage.textContent = data.winner.id === playerId ? "سبقت الجميع! ⁦+1⁩ نقطة" : `حسم ${data.winner.name} السؤال.`;
-    } else if (data.reason === "timeout" || !data.reason) {
-        timerElement.textContent = "0";
-        answerMessage.textContent = "انتهى الوقت.";
+        return earned ? `إجابة صحيحة! ⁦+${earned.awardedPoints}⁩ نقطة` : `أجاب ${playersText(data.winners.length)} إجابة صحيحة.`;
     }
-    updateControls();
+    if (data.winner) return data.winner.id === playerId ? "سبقت الجميع! ⁦+1⁩ نقطة" : `حسم ${data.winner.name} السؤال.`;
+    const answer = correctChoiceText(data);
+    return `${data.reason === "answered" ? "ما أحد جاوب صح هالمرة." : "انتهى الوقت."}${answer ? ` ${answer}` : ""}`;
+}
+function correctChoiceText(data) {
+    const choice = choicesContainer.querySelectorAll("button")[data.correctIndex]?.querySelector(".choice-text")?.textContent;
+    return choice ? `الجواب الصحيح: \u2068${choice}\u2069` : "";
 }
 // The fastest correct answer gets a confetti burst on their own screen.
 socket.on("questionClosed", data => {

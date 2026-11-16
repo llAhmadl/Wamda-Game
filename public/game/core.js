@@ -26,6 +26,7 @@ let longDelay = null;
 let syncRetry = null;
 let replaced = false;
 let previousFocus = null;
+let pendingHostNotice = null;
 
 // ---------- Elements ----------
 const el = id => document.getElementById(id);
@@ -46,6 +47,8 @@ const homeButton = el("home-button");
 const connectionOverlay = el("connection-overlay");
 const connectionMessage = el("connection-message");
 const reconnectButton = el("reconnect-button");
+const siteError = el("site-error");
+const hostDialog = el("host-dialog");
 
 // ---------- Arabic counting ----------
 // forms: [one, two, plural for 3–10, singular accusative for 11+]; zero is optional.
@@ -89,9 +92,20 @@ function updateControls() {
         : phase === "finished" && currentRoom && !amHost ? "إذا بدأ المضيف مباراة جديدة ستنتقل لها تلقائيًا." : "";
     updateResultActions();
 }
+// The page-wide toast. Clearing first (with a reflow) replays it for a repeated message.
+function showSiteError(message) {
+    siteError.textContent = "";
+    void siteError.offsetWidth;
+    siteError.textContent = message;
+}
+// A screen's own message element only when that screen is showing; otherwise the toast.
+function showError(message, screen, element) {
+    if (screens[screen].classList.contains("hidden")) showSiteError(message);
+    else element.textContent = message;
+}
 function isConnected() {
     if (socket.connected && connectionReady) return true;
-    homeError.textContent = "لم يتم الاتصال بعد. حاول بعد قليل.";
+    showError("لم يتم الاتصال بعد. حاول بعد قليل.", "home", homeError);
     return false;
 }
 function closeDialogs() {
@@ -162,6 +176,10 @@ function finishRecovery() {
     if (previousFocus?.isConnected && !previousFocus.closest("[inert], .hidden")) previousFocus.focus({ preventScroll: true });
     else focusCurrentPageHeading();
     previousFocus = null;
+    // A host handover that arrived behind the overlay, if this player is still the host.
+    const notice = pendingHostNotice;
+    pendingHostNotice = null;
+    if (notice && amHost) showHostNotice(notice);
 }
 function storeSession(session) {
     savedSession = session;
@@ -230,7 +248,7 @@ socket.on("connect_error", error => {
     if (error?.data?.code === "SESSION_INVALID") {
         storeSession(null);
         currentRoom = ""; phase = "lobby";
-        homeError.textContent = "الجلسة السابقة غير متاحة. يمكنك إنشاء غرفة أو الانضمام مجددًا.";
+        showSiteError("الجلسة السابقة غير متاحة. يمكنك إنشاء غرفة أو الانضمام مجددًا.");
         socket.connect();
     }
 });
@@ -265,9 +283,17 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 window.addEventListener("pageshow", event => { if (event.persisted) synchronize(); });
 window.addEventListener("offline", () => { if (!replaced) { connectionEpoch++; beginRecovery(); } });
 window.addEventListener("online", () => { if (socket.connected) synchronize(); else if (!replaced) socket.connect(); });
+// Every host handover (grace timeout, promotion, the host leaving) gets a modal the
+// new host must acknowledge. It stacks above any open dialog, never under or above the
+// reconnect overlay: until the session is restored (a reconnect can deliver the
+// handover before the snapshot) it waits, and finishRecovery shows it.
+function showHostNotice(message) {
+    if (!connectionReady) { pendingHostNotice = message; return; }
+    el("host-dialog-message").textContent = message;
+    if (!hostDialog.open) hostDialog.showModal();
+    el("host-dialog-ok").focus();
+}
+el("host-dialog-ok").addEventListener("click", () => hostDialog.close());
 socket.on("hostTransferred", data => {
-    const notice = el("host-notice");
-    notice.textContent = data.message;
-    notice.classList.remove("hidden");
-    setTimeout(() => notice.classList.add("hidden"), 10000);
+    if (typeof data?.message === "string" && data.message) showHostNotice(data.message);
 });

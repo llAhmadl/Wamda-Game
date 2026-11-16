@@ -25,3 +25,13 @@ test('browser name validation matches the server for every edge case', () => {
         assert.equal(browser(value), cleanPlayerName(value), JSON.stringify(value));
     }
 });
+
+test('the duplicate-name key folds lookalikes but keeps different names apart', () => {
+    const { nameKey } = require('../lib/player-name');
+    const same = [['محمد', 'مُحمد'], ['محمد', 'محـمد'], ['محمد', 'مُحَمَّد'], ['احمد', 'أحمد'], ['احمد', 'إحمد'], ['امنة', 'آمنة'],
+        ['علي', 'علی'], ['علي', 'على'], ['كريم', 'کريم'], ['Ahmad', 'Аhmad'], ['Ali', 'ali '], ['Ali', 'A l i'],
+        ['ABC', 'ΑΒC'], ['Nora', 'NORA'], ['ﻣﺤﻤﺪ', 'محمد']];
+    for (const [a, b] of same) assert.equal(nameKey(a), nameKey(b), `${a} / ${b}`);
+    const different = [['سارة', 'ساره'], ['محمد', 'أحمد'], ['Ali', 'Alia'], ['علي', 'عليا']];
+    for (const [a, b] of different) assert.notEqual(nameKey(a), nameKey(b), `${a} / ${b}`);
+});

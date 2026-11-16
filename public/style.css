@@ -76,6 +76,24 @@
     --shadow-small: 0 4px 0 var(--ink);
     --shadow-raised: 0 10px 0 var(--ink);
     --panel-pad: 20px;
+    /* Spacing scale. Small steps space things inside a piece, big steps space the pieces
+       themselves, so what belongs together reads as one group. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+    --space-9: 96px;
+    /* Side gutters never shrink under 16px, and clear the notch when a phone is turned sideways. */
+    --gutter-right: max(var(--space-4), env(safe-area-inset-right, 0px));
+    --gutter-left: max(var(--space-4), env(safe-area-inset-left, 0px));
+    /* Entry screens (name, home, feature band): gap between big blocks and padding inside the cards.
+       The gap tightens a little on short phones so the name card still fits the first screen. */
+    --section-gap: clamp(var(--space-6), 6vh, var(--space-7));
+    --card-pad: var(--space-5);
     --header-height: 60px;
     --ease-ui: cubic-bezier(.2, .7, .3, 1);
     --ease-page: cubic-bezier(.22, 1, .36, 1);
@@ -197,7 +215,7 @@ h1, h2, p, bdi, .player-name { overflow-wrap: break-word; }
     max-width: 1120px;
     min-height: var(--header-height);
     margin: 0 auto;
-    padding: 6px max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px));
+    padding: 6px var(--gutter-right) 6px var(--gutter-left);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -257,7 +275,7 @@ h1, h2, p, bdi, .player-name { overflow-wrap: break-word; }
     flex-direction: column;
     justify-content: flex-start;
     margin: 0 auto;
-    padding: 28px max(16px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+    padding: 28px var(--gutter-right) max(32px, env(safe-area-inset-bottom, 0px)) var(--gutter-left);
 }
 /* No forwards fill: a finished animation must not keep a transform, or fixed toasts would anchor to the screen. */
 .screen { animation: screen-in 380ms var(--ease-page) backwards; }
@@ -274,11 +292,21 @@ h1[tabindex="-1"]:focus { outline: none; }
     box-shadow: var(--shadow);
 }
 
+/* ---------- Entry screens (name, home) ----------
+   The first screen is a stage as tall as the phone: hero and card sit a little above its middle
+   (more room below than above, the optical center), and the feature band starts below the fold. */
+.container:has(:is(#name-screen, #home-screen):not(.hidden)) {
+    min-height: calc(100vh - var(--header-height) - var(--line));
+    min-height: calc(100svh - var(--header-height) - var(--line) - env(safe-area-inset-top, 0px));
+    justify-content: center;
+    padding: var(--space-6) var(--gutter-right) calc(var(--space-8) + env(safe-area-inset-bottom, 0px)) var(--gutter-left);
+}
+
 /* ---------- Name ---------- */
-.container:has(#name-screen:not(.hidden)) { justify-content: center; }
-#name-screen { display: grid; gap: 36px; }
+#name-screen { display: grid; gap: var(--section-gap); }
 #name-screen .screen-heading { margin: 0; }
-#name-title { display: grid; justify-items: center; gap: 18px; }
+/* The sticker's tilt and thick shadow eat into the gap, so the tagline sits a full step away. */
+#name-title { display: grid; justify-items: center; gap: var(--space-5); }
 /* The one loud thing on the page: the name of the game as a big tilted sticker. */
 .hero-mark {
     display: inline-flex;
@@ -299,23 +327,29 @@ h1[tabindex="-1"]:focus { outline: none; }
 .hero-line { font-size: clamp(20px, 5.5vw, 28px); font-weight: 600; }
 .name-entry {
     width: 100%;
-    padding: var(--panel-pad);
+    padding: var(--card-pad);
     background: var(--surface);
     border: var(--line) solid var(--ink);
     border-radius: var(--shape-panel);
     box-shadow: var(--shadow);
 }
 #name-screen .name-card { padding: 0; border: 0; background: transparent; box-shadow: none; }
-#play-button { margin-top: 16px; }
+#name-screen #name-label { margin-bottom: var(--space-3); }
+#name-screen #name-error { margin-top: var(--space-2); }
+#play-button { margin-top: var(--space-4); }
 .continue-button { width: 100%; }
 .continue-button svg, .room-action-icon { flex: 0 0 22px; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Home ---------- */
+#home-screen .screen-heading { margin-bottom: var(--section-gap); }
+#home-screen .screen-heading p { margin-top: var(--space-2); }
 #player-name { font-weight: 800; }
+.room-entry { padding: var(--card-pad); }
 .room-entry h2 { font-size: 21px; }
-.room-create #create-button { margin-top: 14px; }
-.room-join label { margin-top: 12px; }
-.divider { display: flex; align-items: center; gap: 12px; margin: 26px 0; color: var(--muted); font-size: 15px; font-weight: 500; }
+.room-create #create-button { margin-top: var(--space-4); }
+.room-join label { margin-top: var(--space-3); }
+.room-join .field-action { margin-top: var(--space-4); }
+.divider { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0; color: var(--muted); font-size: 15px; font-weight: 500; }
 .divider::before, .divider::after { content: ""; flex: 1; border-top: 2px dashed var(--border); }
 .divider span { display: grid; place-items: center; min-width: 40px; height: 40px; padding: 2px 8px 0; border: 2px solid var(--border); border-radius: 50%; }
 
@@ -656,6 +690,8 @@ button:disabled { cursor: not-allowed; }
 .position { position: relative; display: grid; place-items: center; width: 38px; height: 38px; padding-top: 2px; border: 2px solid var(--ink); border-radius: 50%; background: var(--surface); color: var(--text); font-family: var(--font-display); font-size: 17px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .result-row[class*="place-"] .position { background: var(--place); color: var(--on-fill); }
 .result-row .crown { top: -20px; width: 28px; height: 28px; }
+/* A player who dropped out keeps their place in the ranking, faded with a dashed outline like the lobby. */
+.result-row.is-away { opacity: .55; border-style: dashed; box-shadow: none; transition: opacity 300ms ease, background-color 600ms ease; }
 .result-score { white-space: nowrap; font-family: var(--font-display); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
 #results-screen .panel > button + button { margin-top: 14px; }
 #round-message { min-height: 24px; }
@@ -731,46 +767,72 @@ button:disabled { cursor: not-allowed; }
 /* Saving the same taken name again: the dialog shakes instead of closing. */
 #rename-dialog.is-shaking { animation: shake 380ms ease; }
 .settings-dialog form { padding-bottom: 5px; }
+/* Becoming the host is news, so this dialog is louder than the others: the title is a tilted
+   pop-colored sticker (the hero's language) and everything sits centered under it. */
+#host-dialog { width: min(400px, calc(100% - 32px)); padding: var(--space-6) var(--space-5) var(--space-5); text-align: center; }
+#host-dialog .dialog-heading { justify-content: center; margin-bottom: var(--space-5); }
+#host-dialog h2 { display: inline-block; padding: 6px 22px 2px; border: var(--line) solid var(--ink); border-radius: var(--shape-control); background: var(--pop); color: var(--pop-text); box-shadow: var(--shadow-small); font-size: 28px; line-height: 1.3; rotate: -3deg; }
+#host-dialog p { color: var(--muted); font-size: 17px; line-height: 1.8; }
+#host-dialog p:empty { display: none; }
+#host-dialog .primary { margin-top: var(--space-5); }
 
 /* ---------- Feature band ----------
-   One card under the name and home screens only: three things that make the game, split by
-   the same dashed rule as the home "أو". Stacked on phones, one row on wide screens. */
-.features { display: none; width: 100%; max-width: 1040px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); }
+   Shown under the name and home screens only, below the fold. On phones each feature is its own
+   card (badge and title on one line, the sentence under them at full width); on wide screens the
+   three sit in one card, split by the same dashed rule as the home "أو". */
+.features { display: none; width: 100%; max-width: 560px; margin: 0 auto; padding: var(--space-4) var(--gutter-right) var(--space-8) var(--gutter-left); }
 body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: block; }
-.features-list { display: grid; margin: 0; padding: 4px var(--panel-pad); list-style: none; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); box-shadow: var(--shadow); }
-.feature { display: grid; grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 16px; padding: 20px 0; }
-.feature + .feature { border-top: 2px dashed var(--border); }
-.feature-icon { grid-row: 1 / span 2; display: grid; place-items: center; width: 52px; height: 52px; border: var(--line) solid var(--ink); border-radius: 16px 16px 4px 16px; background: var(--candy-yellow); color: var(--on-fill); box-shadow: 0 3px 0 var(--ink); rotate: -4deg; }
+.features-list { display: grid; gap: var(--space-5); margin: 0; padding: 0; list-style: none; }
+.feature {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-areas: "icon title" "text text";
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--card-pad);
+    border: var(--line) solid var(--ink);
+    border-radius: var(--shape-panel);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+}
+.feature-icon { grid-area: icon; display: grid; place-items: center; width: 52px; height: 52px; border: var(--line) solid var(--ink); border-radius: 16px 16px 4px 16px; background: var(--candy-yellow); color: var(--on-fill); box-shadow: 0 3px 0 var(--ink); rotate: -4deg; }
 .feature:nth-child(2) .feature-icon { background: var(--candy-blue); rotate: 3deg; }
 .feature:nth-child(3) .feature-icon { background: var(--candy-mint); rotate: -2deg; }
 .feature-icon svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.feature h2 { padding-top: 4px; font-size: 20px; line-height: 1.35; }
-.feature p { margin-top: 4px; color: var(--muted); font-size: 15px; line-height: 1.75; }
+.feature h2 { grid-area: title; padding-top: var(--space-1); font-size: 21px; line-height: 1.35; }
+.feature p { grid-area: text; max-width: 42ch; color: var(--muted); font-size: 16px; line-height: 1.75; }
 @media (min-width: 900px) {
-    .features { padding-inline: 32px; }
-    .features-list { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 26px 0 28px; }
+    .features { max-width: 1040px; padding: var(--space-4) 32px var(--space-8); }
+    .features-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: var(--space-6) 0; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); box-shadow: var(--shadow); }
     /* Each column: badge on top, then the title and its line. */
-    .feature { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; align-content: start; padding: 2px 30px; }
-    .feature-icon { grid-row: auto; margin-bottom: 14px; }
-    .feature + .feature { border-top: 0; border-inline-start: 2px dashed var(--border); }
+    .feature { grid-template-columns: minmax(0, 1fr); grid-template-areas: "icon" "title" "text"; align-content: start; justify-items: start; gap: 0; padding: var(--space-1) var(--space-6); border: 0; border-radius: 0; background: none; box-shadow: none; }
+    .feature-icon { margin-bottom: var(--space-4); }
+    .feature p { margin-top: var(--space-1); }
+    .feature + .feature { border-inline-start: 2px dashed var(--border); }
 }
-/* Scroll reveal: only once page.js can watch the band, and only when motion is welcome.
-   The card rises in, then its three items follow one after another; each badge lands with a
-   small bounce, like the hero sticker. Without page.js everything is simply there. */
+
+/* ---------- Scroll reveal ----------
+   page.js marks <html> with .reveal-ready (only with IntersectionObserver and without reduced motion),
+   then adds .is-visible to each [data-reveal] element the first time it scrolls into view. Pieces that
+   arrive together get data-reveal-step 1–4 and follow one another. Without page.js nothing is hidden. */
 @media (prefers-reduced-motion: no-preference) {
-    .reveal-ready .features-list { transition: opacity 700ms var(--ease-page), transform 700ms var(--ease-page); }
-    .reveal-ready .feature { transition: opacity 700ms var(--ease-page) var(--reveal-delay), transform 700ms var(--ease-page) var(--reveal-delay); }
-    .reveal-ready .feature-icon { transition: transform 620ms var(--ease-bounce) calc(var(--reveal-delay) + 140ms); }
-    .reveal-ready .feature:nth-child(1) { --reveal-delay: 120ms; }
-    .reveal-ready .feature:nth-child(2) { --reveal-delay: 240ms; }
-    .reveal-ready .feature:nth-child(3) { --reveal-delay: 360ms; }
-    .reveal-ready .features-list:not(.is-visible) { opacity: 0; transform: translateY(28px); }
-    .reveal-ready .features-list:not(.is-visible) .feature { opacity: 0; transform: translateY(16px); }
-    .reveal-ready .features-list:not(.is-visible) .feature-icon { transform: scale(.6); }
+    .reveal-ready [data-reveal] { transition: opacity 700ms var(--ease-page) var(--reveal-delay, 0ms), transform 700ms var(--ease-page) var(--reveal-delay, 0ms); }
+    .reveal-ready [data-reveal]:not(.is-visible) { opacity: 0; transform: translateY(var(--space-5)); }
+    .reveal-ready [data-reveal-step="1"] { --reveal-delay: 110ms; }
+    .reveal-ready [data-reveal-step="2"] { --reveal-delay: 220ms; }
+    .reveal-ready [data-reveal-step="3"] { --reveal-delay: 330ms; }
+    .reveal-ready [data-reveal-step="4"] { --reveal-delay: 440ms; }
+    /* Each badge lands with a small bounce once its card is in, like the hero sticker. */
+    .reveal-ready .feature[data-reveal] .feature-icon { transition: transform 620ms var(--ease-bounce) calc(var(--reveal-delay, 0ms) + 160ms); }
+    .reveal-ready .feature[data-reveal]:not(.is-visible) .feature-icon { transform: scale(.6); }
+}
+/* On phones the list is only a stack of cards with nothing of its own to show, so only the cards move. */
+@media (prefers-reduced-motion: no-preference) and (max-width: 899px) {
+    .reveal-ready .features-list[data-reveal]:not(.is-visible) { opacity: 1; transform: none; }
 }
 
 /* ---------- Footer & overlays ---------- */
-.site-footer { flex-shrink: 0; padding: 20px 20px max(24px, env(safe-area-inset-bottom, 0px)); color: var(--page-muted); font-size: 13px; font-weight: 400; text-align: center; }
+.site-footer { flex-shrink: 0; padding: var(--space-5) var(--space-4) max(var(--space-6), env(safe-area-inset-bottom, 0px)); color: var(--page-muted); font-size: 13px; font-weight: 400; text-align: center; }
 .connection-overlay {
     position: fixed; inset: 0; z-index: 10000;
     display: grid; place-items: center; padding: 24px;
@@ -819,18 +881,17 @@ body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: bloc
 
 /* ---------- Responsive ---------- */
 @media (min-width: 620px) {
-    :root { --panel-pad: 28px; }
+    :root { --panel-pad: 28px; --card-pad: var(--space-6); }
     .choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 900px) {
-    :root { --panel-pad: 32px; --header-height: 66px; }
+    :root { --panel-pad: 32px; --header-height: 66px; --section-gap: clamp(var(--space-7), 7vh, var(--space-8)); }
     body { font-size: 17px; }
     .header-inner { padding-inline: max(32px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-left, 0px)); }
     .brand { font-size: 24px; }
     .container { padding: 48px 32px 48px; }
     .container:has(#game-screen:not(.hidden)) { padding-top: 32px; }
-    .container:has(:is(#name-screen, #home-screen):not(.hidden)) { max-width: 600px; }
-    #name-screen { gap: 44px; }
+    .container:has(:is(#name-screen, #home-screen):not(.hidden)) { max-width: 600px; padding: var(--space-7) 32px var(--space-9); }
     .screen-heading { margin-bottom: 36px; }
     .screen-heading h1 { font-size: 56px; }
     .screen-heading p { font-size: 20px; }
@@ -841,7 +902,6 @@ body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: bloc
 }
 @media (max-width: 359px) {
     :root { --panel-pad: 16px; }
-    .header-inner { padding-inline: 12px; }
     .container { padding-inline: 12px; padding-top: 22px; }
     .primary, .secondary { padding-inline: 14px; font-size: 17px; }
     .choice { min-height: 56px; font-size: 16px; }
@@ -849,8 +909,10 @@ body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: bloc
     .result-row { padding: 8px 10px; gap: 8px; }
     .settings-dialog { padding: 18px; }
     .hero-mark { padding-inline: 20px; }
-    .features { padding-inline: 12px; }
-    .feature { grid-template-columns: 44px minmax(0, 1fr); column-gap: 12px; }
+    /* Entry screens keep their 16px gutters even on the narrowest phones. */
+    .container:has(:is(#name-screen, #home-screen):not(.hidden)) { padding-right: var(--gutter-right); padding-left: var(--gutter-left); }
+    :root { --card-pad: 20px; }
+    .feature { grid-template-columns: 44px minmax(0, 1fr); gap: var(--space-3); }
     .feature-icon { width: 44px; height: 44px; }
     .feature-icon svg { width: 22px; height: 22px; }
 }

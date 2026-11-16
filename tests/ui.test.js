@@ -433,6 +433,7 @@ test("guests see selected categories and scoring but cannot submit settings, eve
 test("settings prevent overlapping requests and recover from server rejection; start errors stay visible", async () => {
     const ui = setup();
     ui.socket.receive("lobbyUpdate", categoryLobby({ selectedCategoryIds: ["science", "history"], enoughQuestions: true }));
+    vm.runInContext('showScreen("lobby")', ui.context);
     ui.socket.defer = true;
     const cards = ui.el("category-cards").children;
     await cards[1].click();
@@ -587,7 +588,7 @@ test("credentials persist privately; replaced tabs require explicit reclaim and 
     assert.equal(ui.store.has("wamda-session-v1"), false);
     ui.socket.receive("sessionState", { session: { playerId: "new", reconnectToken: "new-private" }, state: null });
     assert.ok(!ui.el("home-screen").classList.contains("hidden"));
-    assert.match(ui.el("home-error").textContent, /الجلسة السابقة غير متاحة/);
+    assert.match(ui.el("site-error").textContent, /الجلسة السابقة غير متاحة/, "A page-wide toast: the name screen may be showing");
     const reloaded = setup({ session: { playerId: "host", reconnectToken: "private-test" } });
     assert.equal(reloaded.socket.initialAuth.playerId, "host");
     assert.equal(reloaded.socket.initialAuth.reconnectToken, "private-test");
@@ -770,7 +771,9 @@ test("hosts can promote and kick other players after confirming; a kicked player
     assert.equal(guestView.el("players-list").querySelector(".player-actions"), null, "Guests get no controls");
     guestView.socket.receive("kicked", { message: "أخرجك المضيف من الغرفة." });
     assert.ok(!guestView.el("home-screen").classList.contains("hidden") || !guestView.el("name-screen").classList.contains("hidden"));
-    assert.equal(guestView.el("home-error").textContent, "أخرجك المضيف من الغرفة.");
+    assert.ok(!guestView.el("name-screen").classList.contains("hidden"), "This guest has no saved name yet");
+    assert.equal(guestView.el("site-error").textContent, "أخرجك المضيف من الغرفة.", "The home message line is hidden on the name screen");
+    assert.equal(guestView.el("home-error").textContent, "");
 });
 
 test("final results count up from round-one scores so overtakes animate", () => {
@@ -1095,4 +1098,212 @@ test("a menu rename rejected in the lobby shows the server message and keeps the
     assert.equal(ui.el("rename-error").textContent, "في الغرفة لاعب بنفس هذا الاسم. اختر اسمًا آخر.");
     assert.equal(ui.el("rename-dialog").open, true);
     assert.equal(ui.el("player-name").textContent, "سارة");
+});
+
+const settle = () => new Promise(resolve => setImmediate(resolve));
+const twoPlayers = [{ id: "host", name: "أحمد", connected: true }, { id: "guest", name: "سارة", connected: true }];
+
+test("an invite while still in another room asks first: accept leaves then joins, cancel stays", async () => {
+    const ui = setup({ search: "?room=xk7pq" });
+    restore(ui, recoveryState({ phase: "lobby" }));
+    assert.equal(ui.el("confirm-dialog").open, true);
+    assert.equal(ui.el("confirm-description").textContent, "تطلع من غرفتك الحالية وتدخل غرفة ⁦XK7PQ⁩؟");
+    assert.deepEqual(ui.urls, ["/"]);
+    await ui.el("confirm-accept").click(); await settle();
+    assert.deepEqual(ui.socket.sent.map(m => m.event), ["leaveRoom", "joinRoom"]);
+    assert.equal(JSON.stringify(ui.socket.sent[1].data), JSON.stringify({ name: "أحمد", code: "XK7PQ" }));
+    assert.ok(!ui.el("lobby-screen").classList.contains("hidden"));
+    assert.equal(ui.el("room-code").textContent, "XK7PQ");
+
+    const stay = setup({ search: "?room=xk7pq" });
+    restore(stay, recoveryState({ phase: "lobby" }));
+    await stay.el("confirm-cancel").click(); await settle();
+    assert.equal(stay.socket.sent.length, 0);
+    assert.ok(!stay.el("lobby-screen").classList.contains("hidden"));
+    assert.equal(stay.el("room-code").textContent, "ABCDE");
+});
+
+test("an invite during a match waits with a message; an invite to the current room does nothing", async () => {
+    const ui = setup({ search: "?room=xk7pq" });
+    restore(ui, recoveryState());
+    await settle();
+    assert.equal(ui.el("confirm-dialog").open, undefined);
+    assert.equal(ui.el("site-error").textContent, "خلّص مباراتك أول، بعدين افتح رابط الدعوة");
+    assert.equal(ui.socket.sent.length, 0);
+    assert.ok(!ui.el("game-screen").classList.contains("hidden"));
+
+    const same = setup({ search: "?room=abcde" });
+    restore(same, recoveryState({ phase: "lobby" }));
+    await settle();
+    assert.equal(same.el("confirm-dialog").open, undefined);
+    assert.equal(same.socket.sent.length, 0);
+    assert.equal(same.el("site-error").textContent, "");
+});
+
+test("a room that is mid-match keeps the typed code and says when to come back", async () => {
+    const ui = setup();
+    await enterName(ui);
+    ui.socket.replies.joinRoom = { ok: false, code: "MATCH_RUNNING", message: "المباراة شغالة الحين، انتظر لين يرجعون لغرفة الانتظار." };
+    ui.el("room-code-input").value = "qwert";
+    await ui.el("join-button").click();
+    assert.equal(ui.el("room-code-input").value, "QWERT");
+    assert.equal(ui.el("room-code-input").getAttribute("aria-invalid"), null);
+    assert.equal(ui.el("home-error").textContent, "المباراة شغالة الحين، انتظر لين يرجعون لغرفة الانتظار.");
+    assert.equal(ui.el("home-error").classList.contains("sr-only"), false);
+});
+
+test("a late answer says it arrived after the time and is never shown as the player's own answer", async () => {
+    // Review first, then the refusal (the server's order): the correct choice stays green, unselected.
+    const ui = setup();
+    restore(ui, recoveryState());
+    ui.socket.defer = true;
+    await ui.el("choices").children[0].click();
+    const ack = ui.socket.pending.shift();
+    ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: false, reason: "timeout", winners: [] });
+    ack(null, { ok: false, code: "TOO_LATE" });
+    const [first] = ui.el("choices").children;
+    assert.ok(!first.classList.contains("selected"));
+    assert.ok(first.classList.contains("is-correct"));
+    assert.equal(first.getAttribute("aria-pressed"), "false");
+    assert.equal(ui.el("answer-message").textContent, "وصلت إجابتك بعد انتهاء الوقت ⏱️ الجواب الصحيح: ⁨أ⁩");
+
+    // Refusal first, then the review: a late wrong choice is not marked wrong either.
+    const other = setup();
+    restore(other, recoveryState());
+    other.socket.replies.submitAnswer = { ok: false, code: "TOO_LATE" };
+    await other.el("choices").children[2].click();
+    assert.equal(other.el("answer-message").textContent, "وصلت إجابتك بعد انتهاء الوقت ⏱️");
+    other.socket.receive("questionClosed", { correctIndex: 1, lastInRound: false, reason: "timeout", winners: [{ id: "guest", name: "سارة", awardedPoints: 1 }] });
+    const choices = other.el("choices").children;
+    assert.ok(!choices[2].classList.contains("is-wrong") && !choices[2].classList.contains("selected"));
+    assert.ok(choices[1].classList.contains("is-correct"));
+    assert.equal(other.el("answer-message").textContent, "وصلت إجابتك بعد انتهاء الوقت ⏱️ أجاب لاعب واحد إجابة صحيحة.");
+
+    // Other refusals (stale question, bad payload) never claim lateness.
+    const stale = setup();
+    restore(stale, recoveryState());
+    stale.socket.replies.submitAnswer = { ok: false };
+    await stale.el("choices").children[0].click();
+    stale.socket.receive("questionClosed", { correctIndex: 1, lastInRound: false, reason: "answered", winners: [] });
+    assert.doesNotMatch(stale.el("answer-message").textContent, /بعد انتهاء الوقت/);
+});
+
+test("with no winner the review names the correct choice, for wrong answers and for time-outs", async () => {
+    const ui = setup();
+    restore(ui, recoveryState());
+    await ui.el("choices").children[1].click();
+    ui.socket.receive("answerResult", { answerIndex: 1, correct: false, awardedPoints: 0, rank: null });
+    ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: false, reason: "answered", winners: [] });
+    const choices = ui.el("choices").children;
+    assert.equal(ui.el("answer-message").textContent, "ما أحد جاوب صح هالمرة. الجواب الصحيح: ⁨أ⁩");
+    assert.ok(choices[0].classList.contains("is-correct"));
+    assert.ok(choices[1].classList.contains("is-wrong"));
+    assert.notEqual(ui.el("timer").textContent, "0", "Everyone answered: the clock did not run out");
+
+    ui.socket.receive("question", { ...recoveryState().question, questionId: 7, choices: ["Paris", "باريس", "ج", "د"] });
+    ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: false, reason: "timeout", winners: [] });
+    assert.equal(ui.el("answer-message").textContent, "انتهى الوقت. الجواب الصحيح: ⁨Paris⁩");
+    assert.ok(ui.el("choices").children[0].classList.contains("is-correct"));
+    assert.equal(ui.el("timer").textContent, "0");
+});
+
+test("nobody gets a crown or a place with zero points; offline and departed players look faded", () => {
+    const ui = setup();
+    ui.socket.receive("gameOver", { round: 2, ranking: [{ id: "host", name: "أحمد", score: 0, connected: true }, { id: "guest", name: "سارة", score: 0, connected: false }] });
+    for (let i = 0; i < 25; i++) ui.advance(100);
+    const rows = () => ui.el("results-list").children;
+    const marks = row => ["winner", "place-1", "place-2", "place-3"].filter(name => row.classList.contains(name));
+    assert.deepEqual(rows().map(marks), [[], []]);
+    assert.deepEqual(rows().map(row => row.classList.contains("is-away")), [false, true]);
+    // Presence follows later lobby snapshots: back online, then gone from the room.
+    ui.socket.receive("lobbyUpdate", categoryLobby({ phase: "finished", players: twoPlayers }));
+    assert.deepEqual(rows().map(row => row.classList.contains("is-away")), [false, false]);
+    ui.socket.receive("lobbyUpdate", categoryLobby({ phase: "finished", players: [twoPlayers[0]] }));
+    assert.deepEqual(rows().map(row => row.classList.contains("is-away")), [false, true]);
+
+    const mixed = setup();
+    mixed.socket.receive("gameOver", { round: 2, ranking: [{ id: "a", name: "علي", score: 2 }, { id: "b", name: "سارة", score: 0 }, { id: "c", name: "فهد", score: 0 }] });
+    for (let i = 0; i < 25; i++) mixed.advance(100);
+    assert.deepEqual(mixed.el("results-list").children.map(marks), [["winner", "place-1"], [], []]);
+});
+
+test("the kick confirmation tells the truth about coming back, in the lobby and mid-match", async () => {
+    const kickText = async ui => {
+        const asked = ui.el("players-list").children[1].querySelector(".player-actions").children[1].click();
+        const text = ui.el("confirm-description").textContent;
+        await ui.el("confirm-cancel").click(); await asked;
+        return text;
+    };
+    const ui = setup();
+    restore(ui, recoveryState({ phase: "lobby", players: twoPlayers }));
+    assert.equal(await kickText(ui), "سيخرج ⁨سارة⁩ من الغرفة. يستطيع العودة برمز الغرفة إذا أرسلته له.");
+    restore(ui, recoveryState({ players: twoPlayers }));
+    assert.equal(await kickText(ui), "سيخرج ⁨سارة⁩ من الغرفة وتُحذف نقاطه في هذه المباراة. يقدر يرجع برمز الغرفة بعد ما تخلص المباراة وترجعون لغرفة الانتظار.");
+    restore(ui, recoveryState({ phase: "finished", players: twoPlayers, results: { round: 2, ranking: twoPlayers } }));
+    assert.match(await kickText(ui), /بعد ما ترجعون لغرفة الانتظار/);
+    assert.equal(ui.socket.sent.length, 0);
+});
+
+test("every host handover opens a big notice; it waits for a lost connection and closes if the role moves on", async () => {
+    const ui = setup();
+    restore(ui, recoveryState({ phase: "lobby" }));
+    const dialog = ui.el("host-dialog");
+    ui.el("rename-dialog").open = true;
+    ui.socket.receive("hostTransferred", { message: "طلع ⁨سارة⁩، وصرت أنت المضيف 👑" });
+    assert.equal(dialog.open, true);
+    assert.equal(ui.el("rename-dialog").open, true, "It stacks above another dialog instead of discarding it");
+    assert.equal(ui.el("host-dialog-message").textContent, "طلع ⁨سارة⁩، وصرت أنت المضيف 👑");
+    assert.match(html, /<h2 id="host-dialog-title">صرت المضيف 👑<\/h2>/);
+    assert.ok(ui.el("host-notice").classList.contains("hidden"), "The small toast is no longer used");
+    await ui.el("host-dialog-ok").click();
+    assert.equal(dialog.open, false);
+
+    // Behind the reconnect overlay (or before the snapshot) it waits for the session to come back.
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.advance(800);
+    ui.socket.receive("hostTransferred", { message: "⁨سارة⁩ خلّاك المضيف 👑" });
+    assert.notEqual(dialog.open, true);
+    restore(ui, recoveryState({ phase: "lobby" }));
+    assert.equal(dialog.open, true);
+    assert.equal(ui.el("host-dialog-message").textContent, "⁨سارة⁩ خلّاك المضيف 👑");
+    ui.socket.receive("lobbyUpdate", categoryLobby({ hostId: "guest" }));
+    assert.equal(dialog.open, false, "No longer the host: the notice goes away");
+
+    // A pending notice is dropped if the restored session says someone else hosts.
+    ui.socket.connected = false; ui.socket.receive("disconnect");
+    ui.advance(800);
+    ui.socket.receive("hostTransferred", { message: "قديم" });
+    restore(ui, recoveryState({ phase: "lobby", hostId: "guest" }));
+    assert.notEqual(dialog.open, true);
+});
+
+test("messages from screens that are not showing go to the page-wide toast", async () => {
+    const ui = setup();
+    restore(ui, recoveryState({ phase: "finished", players: twoPlayers, results: { round: 2, ranking: twoPlayers } }));
+    ui.socket.replies.kickPlayer = { ok: false, message: "اللاعب غير موجود في الغرفة." };
+    vm.runInContext("openPlayersDialog()", ui.context);
+    const asked = ui.el("players-manage").children[1].querySelector(".player-actions").children[1].click();
+    await ui.el("confirm-accept").click(); await asked;
+    assert.equal(ui.el("site-error").textContent, "اللاعب غير موجود في الغرفة.");
+    assert.equal(ui.el("lobby-error").textContent, "");
+    ui.socket.replies.leaveRoom = { ok: false, message: "تعذر المغادرة." };
+    await ui.el("home-button").click();
+    assert.equal(ui.el("site-error").textContent, "تعذر المغادرة.");
+    assert.equal(ui.el("lobby-error").textContent, "");
+
+    // In the lobby, the lobby's own line is used.
+    restore(ui, recoveryState({ phase: "lobby", players: twoPlayers }));
+    ui.el("site-error").textContent = "";
+    const kicked = ui.el("players-list").children[1].querySelector(".player-actions").children[1].click();
+    await ui.el("confirm-accept").click(); await kicked;
+    assert.equal(ui.el("lobby-error").textContent, "اللاعب غير موجود في الغرفة.");
+    assert.equal(ui.el("site-error").textContent, "");
+
+    // Offline during a question: the warning shows over the game, not on the hidden home screen.
+    const game = setup();
+    restore(game, recoveryState());
+    game.socket.connected = false; game.socket.receive("disconnect");
+    await game.el("choices").children[0].fire("click");
+    assert.equal(game.el("site-error").textContent, "لم يتم الاتصال بعد. حاول بعد قليل.");
+    assert.equal(game.el("home-error").textContent, "");
 });

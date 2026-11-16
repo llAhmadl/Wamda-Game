@@ -80,7 +80,7 @@ function changeRoomSettings(changes) {
     const { selectedCategoryIds: categoryIds, scoringMode, duration } = lobbySettings;
     socket.timeout(10000).emit("updateRoomSettings", { code: currentRoom, categoryIds, scoringMode, duration, ...changes }, (error, response) => {
         settingsPending = false;
-        if (error || !response?.ok) lobbyError.textContent = response?.message || "تعذر حفظ إعدادات الغرفة. حاول مجددًا.";
+        if (error || !response?.ok) showError(response?.message || "تعذر حفظ إعدادات الغرفة. حاول مجددًا.", "lobby", lobbyError);
         renderLobbySettings();
     });
 }
@@ -122,6 +122,8 @@ function renderLobby(data) {
     if (!amHost) {
         el("host-notice").classList.add("hidden");
         if (el("players-dialog").open) el("players-dialog").close();
+        // The host role moved on again before the "you are the host" notice was dismissed.
+        if (hostDialog.open) hostDialog.close();
     }
     if (data.phase) phase = data.phase;
     lobbySettings = { categories: data.categories || [], selectedCategoryIds: data.selectedCategoryIds || [], scoringMode: data.scoringMode || 1,
@@ -131,6 +133,8 @@ function renderLobby(data) {
     startButton.classList.toggle("hidden", !amHost);
     // "Play again" brings everyone from the final results back to this lobby.
     if (returningToLobby) showScreen("lobby");
+    // The results ranking fades players who went offline or left after it was shown.
+    updateResultPresence(data.players);
 }
 socket.on("lobbyUpdate", renderLobby);
 
@@ -163,11 +167,8 @@ function hostCommand(event, target) {
     if (!amHost || !isConnected()) return;
     lobbyError.textContent = "";
     socket.timeout(10000).emit(event, { code: currentRoom, playerId: target.id }, (error, response) => {
-        if (error || !response?.ok) {
-            const message = response?.message || "تعذر تنفيذ الطلب. حاول مجددًا.";
-            lobbyError.textContent = message;
-            el("site-error").textContent = isActiveGame() ? message : "";
-        }
+        // The players dialog works on every screen; the lobby's own message line only shows in the lobby.
+        if (error || !response?.ok) showError(response?.message || "تعذر تنفيذ الطلب. حاول مجددًا.", "lobby", lobbyError);
     });
 }
 function playerActions(player) {
@@ -195,8 +196,14 @@ function playerActions(player) {
         if (await confirmAction("نقل الاستضافة؟", `سيصبح ${player.name} المضيف ويتحكم بالغرفة بدلًا منك.`, "نقل الاستضافة")) hostCommand("makeHost", player);
     });
     make("kick", `إخراج ${player.name}`, "M6 6l12 12M18 6 6 18", async () => {
-        const during = isActiveGame() ? " وتُحذف نقاطه في هذه المباراة" : "";
-        if (await confirmAction("إخراج اللاعب؟", `سيخرج ${player.name} من الغرفة${during}. يستطيع العودة برمز الغرفة إذا أرسلته له.`, "إخراج")) hostCommand("kickPlayer", player);
+        // Outside the lobby the server refuses joins, so the way back opens only after the match.
+        const name = `\u2068${player.name}\u2069`;
+        const message = isActiveGame()
+            ? `سيخرج ${name} من الغرفة وتُحذف نقاطه في هذه المباراة. يقدر يرجع برمز الغرفة بعد ما تخلص المباراة وترجعون لغرفة الانتظار.`
+            : phase === "finished"
+                ? `سيخرج ${name} من الغرفة. يقدر يرجع برمز الغرفة بعد ما ترجعون لغرفة الانتظار.`
+                : `سيخرج ${name} من الغرفة. يستطيع العودة برمز الغرفة إذا أرسلته له.`;
+        if (await confirmAction("إخراج اللاعب؟", message, "إخراج")) hostCommand("kickPlayer", player);
     });
     return actions;
 }
@@ -220,7 +227,7 @@ function clearRoom(message = "") {
     el("host-notice").classList.add("hidden");
     updateControls();
     showScreen(playerName ? "home" : "name");
-    homeError.textContent = message;
+    if (message) showError(message, "home", homeError);
 }
 socket.on("kicked", data => clearRoom(data?.message || "أخرجك المضيف من الغرفة."));
 
@@ -233,7 +240,7 @@ async function requestQuitGame() {
     if (!leave || !currentRoom || !isConnected()) return;
     socket.timeout(10000).emit("quitMatch", {}, (error, response) => {
         if (!error && response?.ok) clearRoom();
-        else el("site-error").textContent = "تعذر الخروج من اللعبة. حاول مجددًا.";
+        else showSiteError("تعذر الخروج من اللعبة. حاول مجددًا.");
     });
 }
 

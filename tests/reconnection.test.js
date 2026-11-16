@@ -124,7 +124,7 @@ test('host keeps ownership within 30 seconds; repeated failovers choose original
     f.advance(HOST_GRACE_MS - 1);
     assert.equal(model.hostId, host.session.playerId);
     const promoted = event(oldest, 'hostTransferred'); f.advance(1);
-    assert.equal((await promoted).message, 'المضيف للأسف ما عاد يستجيب، والآن أنت صاحب الهوست');
+    assert.equal((await promoted).message, '\u2068المضيف\u2069 للأسف ما عاد يستجيب، وصرت أنت المضيف 👑');
     assert.equal(model.hostId, first.session.playerId);
     await snapshot(second);
     assert.equal(notices[0].length, 0); assert.equal(notices[2].length, 0); assert.equal(notices[1].length, 1);
@@ -306,7 +306,9 @@ test('brand reset in lobby clears name, transfers host and survives a lost reply
     assert.equal(refreshed.state, null);
     assert.equal((await request(refreshed, 'syncState')).name, '');
     assert.equal((await request(refreshed, 'resetSession')).ok, true, 'Departure retries are harmless');
-    await snapshot(guest); assert.equal(notices.length, 0, 'An explicit exit is not a host outage');
+    await snapshot(guest);
+    // An explicit exit is not a host outage, but the new host is still told who left.
+    assert.deepEqual(notices, [{ message: 'طلع \u2068المضيف\u2069، وصرت أنت المضيف 👑' }]);
     // No acknowledgement requested: the departure still becomes the restored truth.
     other.emit('resetSession');
     const lostReply = await request(other, 'syncState');
@@ -655,4 +657,95 @@ test('rejoining your own room and reconnecting are unaffected by the name check'
     await f.disconnect(back);
     const third = await f.connect();
     assert.equal((await request(third, 'joinRoom', { code, name: 'سارة' })).code, 'NAME_TAKEN');
+});
+
+test('lookalike names count as taken (harakat, tatweel, spaces, alef/ya variants, Cyrillic twins) and display as typed', async t => {
+    const f = await setup(t), host = await f.connect(), guest = await f.connect(), other = await f.connect(), third = await f.connect();
+    const { code } = await request(host, 'createRoom', { name: 'محمد' });
+    for (const name of ['مُحمد', 'محـمد', 'مح مد', 'مُحَمَّد']) assert.equal((await request(guest, 'joinRoom', { code, name })).code, 'NAME_TAKEN', name);
+    assert.equal((await request(guest, 'joinRoom', { code, name: 'أحمد' })).ok, true);
+    assert.equal((await request(third, 'joinRoom', { code, name: 'احمد' })).code, 'NAME_TAKEN');
+    assert.equal((await request(third, 'joinRoom', { code, name: 'علی' })).ok, true);
+    assert.equal((await request(guest, 'changeName', { name: 'علي' })).code, 'NAME_TAKEN');
+    assert.deepEqual((await snapshot(host)).players.map(p => p.name), ['محمد', 'أحمد', 'علی'], 'Names are shown exactly as typed');
+    const latin = await request(other, 'createRoom', { name: 'Ahmad' });
+    const late = await f.connect();
+    assert.equal((await request(late, 'joinRoom', { code: latin.code, name: 'Аhmad' })).code, 'NAME_TAKEN', 'Cyrillic А');
+    assert.equal((await request(late, 'joinRoom', { code: latin.code, name: 'Ali' })).ok, true);
+    assert.equal((await request(other, 'changeName', { name: 'ali ' })).code, 'NAME_TAKEN');
+});
+
+test('newcomers are refused outside the lobby (match, round results, final results) and welcome again after play again', async t => {
+    const f = await setup(t), { group: [host, guest], code, model } = await f.room(2, 1);
+    const newcomer = await f.connect();
+    const refused = { ok: false, code: 'MATCH_RUNNING', message: 'المباراة شغالة الحين، انتظر لين يرجعون لغرفة الانتظار.' };
+    let q = await f.start(host, code);
+    assert.deepEqual(await request(newcomer, 'joinRoom', { code, name: 'متأخر' }), refused);
+    const gameId = q.gameId;
+    for (let index = 0; index < 20; index++) {
+        await answer(guest, code, q, 0);
+        const next = index === 19 ? event(host, 'gameOver') : index === 9 ? event(host, 'roundOver') : event(host, 'question');
+        host.emit('nextQuestion', { code, gameId, questionId: index });
+        q = await next;
+        if (index === 9) {
+            assert.equal(model.phase, 'roundResults');
+            assert.deepEqual(await request(newcomer, 'joinRoom', { code, name: 'متأخر' }), refused);
+            const second = event(host, 'question'); host.emit('nextRound', { code, gameId, round: 1 }); q = await second;
+        }
+    }
+    assert.equal(model.phase, 'finished');
+    assert.equal(model.started, false, 'The final results are not "started", yet still closed to newcomers');
+    assert.deepEqual(await request(newcomer, 'joinRoom', { code, name: 'متأخر' }), refused);
+    assert.deepEqual(await request(guest, 'joinRoom', { code, name: 'لاعب 1' }), { ok: true, code }, 'A member re-sending the code is unaffected');
+    assert.equal(model.players.size, 2);
+    await f.disconnect(guest);
+    const back = await f.connect(guest.session);
+    assert.equal(back.state.phase, 'finished', 'A reconnecting member returns to the results');
+    assert.equal((await request(host, 'playAgain', { code })).ok, true);
+    assert.deepEqual(await request(newcomer, 'joinRoom', { code, name: 'متأخر' }), { ok: true, code });
+    assert.equal(model.players.size, 3);
+});
+
+test('refused answers say why: TOO_LATE after the deadline, CLOSED once decided, plain ok:false when stale or malformed', async t => {
+    const f = await setup(t), { group: [host, a, b], code, model } = await f.room(3, 1);
+    const q = await f.start(host, code);
+    f.advance(20000, false);
+    assert.deepEqual(await answer(a, code, q), { ok: false, code: 'TOO_LATE' });
+    assert.equal(model.phase, 'review');
+    assert.equal(model.review.reason, 'timeout');
+    assert.deepEqual(await answer(b, code, q), { ok: false, code: 'TOO_LATE' }, 'Still late after the time-out closed it');
+    assert.deepEqual(await answer(b, code, q, 7), { ok: false });
+    const next = event(host, 'question');
+    host.emit('nextQuestion', { code, gameId: q.gameId, questionId: 0 });
+    const q2 = await next;
+    assert.equal((await answer(a, code, q2)).answer.awardedPoints, 1);
+    assert.equal(model.review.reason, 'winner');
+    assert.deepEqual(await answer(b, code, q2), { ok: false, code: 'CLOSED' });
+    assert.deepEqual(await answer(b, code, q), { ok: false }, 'An old question is neither late nor closed');
+    assert.equal(model.players.get(b.session.playerId).score, 0);
+});
+
+test('the new host is told when the host leaves on purpose (also mid-match or with nobody online) and when promoted', async t => {
+    const f = await setup(t), { group: [host, a, b], code, model } = await f.room(3, 1);
+    await f.start(host, code);
+    const bNotices = [];
+    b.on('hostTransferred', data => bNotices.push(data));
+    const notice = event(a, 'hostTransferred');
+    assert.equal((await request(host, 'quitMatch')).ok, true);
+    assert.deepEqual(await notice, { message: 'طلع ⁨المضيف⁩، وصرت أنت المضيف 👑' });
+    assert.equal(model.hostId, a.session.playerId);
+    const promoted = event(b, 'hostTransferred');
+    assert.equal((await request(a, 'makeHost', { code, playerId: b.session.playerId })).ok, true);
+    assert.deepEqual(await promoted, { message: '⁨لاعب 1⁩ خلّاك المضيف 👑' });
+    await snapshot(b);
+    assert.equal(bNotices.length, 1, 'Only the successor is told, once');
+
+    // Nobody online to take over: the first player back hears who left, not a time-out.
+    const other = await f.room(2, 1);
+    await f.disconnect(other.group[1]);
+    assert.equal((await request(other.group[0], 'leaveRoom')).ok, true);
+    const back = f.raw(other.group[1].session), heard = event(back, 'hostTransferred');
+    back.connect();
+    assert.deepEqual(await heard, { message: 'طلع ⁨المضيف⁩، وصرت أنت المضيف 👑' });
+    assert.equal(other.model.hostId, other.group[1].session.playerId);
 });

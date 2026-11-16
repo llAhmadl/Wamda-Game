@@ -132,7 +132,8 @@ test("two real clients: all questions, scores, host transfer and question timeou
         if (round === 0) {
             const rejected = await request(outsider, "joinRoom", { name: "Late", code: created.code });
             assert.equal(rejected.ok, false);
-            assert.equal(rejected.message, "بدأت اللعبة بالفعل.");
+            assert.equal(rejected.code, "MATCH_RUNNING");
+            assert.equal(rejected.message, "المباراة شغالة الحين، انتظر لين يرجعون لغرفة الانتظار.");
         }
 
         const closed = Promise.all([nextEvent(host, "questionClosed"), nextEvent(guest, "questionClosed")]);

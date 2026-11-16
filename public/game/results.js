@@ -3,6 +3,8 @@ let resultsAnimation = null;
 let resultMotions = [];
 // Round-one scores by player id, so the final results animate overtakes from there.
 let roundScores = null;
+// The rows currently shown, so presence updates can fade players who went offline.
+let resultEntries = [];
 const resultsList = el("results-list");
 const playAgainButton = el("play-again-button");
 
@@ -51,8 +53,9 @@ function renderRanking(ranking, animateScores, from = null, celebrateEnd = false
         row.appendChild(name);
         row.appendChild(score);
         const start = Math.min(player.score, from?.get(player.id) ?? 0);
-        return { player, row, position, score, start, displayed: start };
+        return { player: { ...player }, row, position, score, start, displayed: start };
     });
+    resultEntries = entries;
     const animate = animateScores && !reducedMotion() && entries.some(entry => entry.player.score > entry.start);
     const at = (entry, progress) => entry.start + Math.floor((entry.player.score - entry.start) * progress);
     resultsList.innerHTML = "";
@@ -70,13 +73,14 @@ function renderRanking(ranking, animateScores, from = null, celebrateEnd = false
             entry.position.textContent = rank;
             entry.score.textContent = pointsText(entry.displayed);
             entry.row.className = "result-row";
-            const settled = progress === 1 || entry.displayed > 0;
-            if (rank === 1 && settled) {
+            if (entry.player.connected === false) entry.row.classList.add("is-away");
+            // A place (and the crown) is earned with points: nobody wins with zero.
+            if (rank === 1 && entry.displayed > 0) {
                 entry.row.classList.add("winner");
                 const crown = crownIcon();
                 if (crown) entry.position.appendChild(crown);
             }
-            if (settled && rank <= 3 && entry.displayed > 0) entry.row.classList.add(`place-${rank}`);
+            if (rank <= 3 && entry.displayed > 0) entry.row.classList.add(`place-${rank}`);
             resultsList.appendChild(entry.row);
         });
         if (move) entries.forEach(entry => {
@@ -112,6 +116,15 @@ function renderRanking(ranking, animateScores, from = null, celebrateEnd = false
         }
     }, 100);
 }
+// Players who disconnected or left since the ranking was sent look faded (style.css: .result-row.is-away).
+function updateResultPresence(players) {
+    if (!Array.isArray(players)) return;
+    for (const entry of resultEntries) {
+        if (typeof entry.player.id !== "string") continue;
+        entry.player.connected = players.find(player => player.id === entry.player.id)?.connected ?? false;
+        entry.row.classList.toggle("is-away", entry.player.connected === false);
+    }
+}
 socket.on("gameOver", data => showResults(data, true, true));
 socket.on("roundOver", data => showResults(data, false, true));
 
@@ -138,7 +151,7 @@ function returnHome() {
     if (!socket.connected || !connectionReady) return;
     socket.timeout(10000).emit("leaveRoom", {}, (error, response) => {
         if (!error && response?.ok) finish();
-        else lobbyError.textContent = response?.message || "تعذر مغادرة الغرفة. حاول مجددًا.";
+        else showError(response?.message || "تعذر مغادرة الغرفة. حاول مجددًا.", "lobby", lobbyError);
     });
 }
 homeButton.addEventListener("click", returnHome);

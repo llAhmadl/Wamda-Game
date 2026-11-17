@@ -71,11 +71,22 @@
     --winner-border: #FFD23F;
     --backdrop: rgb(26 20 70 / 55%);
     --flash: rgb(255 255 255 / 90%);
+    /* Outlines: 2px for flat pieces inside a card (rows, chips, fields, small badges), 3px for every
+       piece that stands on its own (cards, buttons, choices), 4px only for the hero sticker. */
+    --line-thin: 2px;
     --line: 3px;
-    --shadow: 0 6px 0 var(--ink);
-    --shadow-small: 0 4px 0 var(--ink);
-    --shadow-raised: 0 10px 0 var(--ink);
-    --panel-pad: 20px;
+    --line-thick: 4px;
+    /* Elevation: three solid ink edges and nothing else. Controls stand on 4px, cards and bars on 6px,
+       what floats over the page (dialogs, the hero sticker) on 10px. A pressed or picked control sinks
+       to its 1px edge, so pressing always travels the same 3px. Rows and chips inside a card are flat. */
+    --depth-1: 4px;
+    --depth-2: 6px;
+    --depth-3: 10px;
+    --shadow-small: 0 var(--depth-1) 0 var(--ink);
+    --shadow: 0 var(--depth-2) 0 var(--ink);
+    --shadow-raised: 0 var(--depth-3) 0 var(--ink);
+    --shadow-pressed: 0 1px 0 var(--ink);
+    --press: calc(var(--depth-1) - 1px);
     /* Spacing scale. Small steps space things inside a piece, big steps space the pieces
        themselves, so what belongs together reads as one group. */
     --space-1: 4px;
@@ -90,21 +101,38 @@
     /* Side gutters never shrink under 16px, and clear the notch when a phone is turned sideways. */
     --gutter-right: max(var(--space-4), env(safe-area-inset-right, 0px));
     --gutter-left: max(var(--space-4), env(safe-area-inset-left, 0px));
-    /* Entry screens (name, home, feature band): gap between big blocks and padding inside the cards.
-       The gap tightens a little on short phones so the name card still fits the first screen. */
+    /* The three rhythm steps, always in this order: padding inside a card < gap between sibling cards
+       < gap between sections. They grow together at 620px and 900px. A card's top padding is one
+       small step less, because the first line's leading already adds that much air. */
+    --panel-pad: 20px;
+    --panel-pad-top: calc(var(--panel-pad) - var(--space-1));
+    --stack-gap: var(--space-5);
+    /* The gap tightens a little on short phones so the name card still fits the first screen. */
     --section-gap: clamp(var(--space-6), 6vh, var(--space-7));
-    --card-pad: var(--space-5);
+    /* One page width for the header, the lobby and the feature band, so their edges line up. */
+    --page-max: 1040px;
     --header-height: 60px;
     --ease-ui: cubic-bezier(.2, .7, .3, 1);
     --ease-page: cubic-bezier(.22, 1, .36, 1);
     --ease-bounce: cubic-bezier(.34, 1.56, .64, 1);
-    --radius-panel: 26px;
-    --radius-control: 16px;
-    /* The house shape: three round corners and one sharp one (bottom-start). */
-    --shape-panel: 26px 26px 6px 26px;
-    --shape-control: 16px 16px 4px 16px;
+    /* Radii: small (12) for pieces inside pieces, control (16) for anything pressed or typed in,
+       panel (24) for cards, hero (32) for the sticker. */
     --radius-small: 12px;
+    --radius-control: 16px;
+    --radius-panel: 24px;
+    --radius-hero: 32px;
     --radius-pill: 999px;
+    /* The house shape: three round corners and one sharp one (bottom-start). */
+    --shape-panel: var(--radius-panel) var(--radius-panel) 6px var(--radius-panel);
+    --shape-control: var(--radius-control) var(--radius-control) 4px var(--radius-control);
+    --shape-hero: var(--radius-hero) var(--radius-hero) 8px var(--radius-hero);
+    /* Leading: headings tight, controls snug, reading text open. */
+    --leading-tight: 1.25;
+    --leading-snug: 1.35;
+    --leading-body: 1.6;
+    /* Baloo Bhaijaan sits high in its line box (tall ascent, short caps): this much extra top padding
+       centres its letters and digits optically in a badge, a key or a sticker. */
+    --nudge: .15em;
     /* Places and the four answer badges share one set of candy colors. */
     --candy-pink: #FF8FAB;
     --candy-blue: #7CC6FF;
@@ -113,6 +141,54 @@
     --candy-violet: #B58CFF;
     --candy-orange: #FF9F5A;
     --place-1: #FFD23F; --place-2: #C7D0DC; --place-3: #E7A66B; --place-4: #7CC6FF; --place-5: #B58CFF; --place-6: #7BE0B5; --place-7: #FF8FAB;
+
+    /* Type scale. Every size is a role, fluid from a 360px phone (the first value) to a 1200px desktop
+       (the last value): phones get the smaller end, desktop keeps its old sizes. Text never goes under
+       16px where it is read (body, inputs, choices, questions) and under 12px anywhere. */
+    --text-xs: clamp(12px, 11.57px + .119vw, 13px);      /* footer, tiny meta, badges on chips */
+    --text-sm: clamp(14px, 13.57px + .119vw, 15px);      /* labels, hints, helper and toast lines */
+    --text-base: clamp(16px, 15.57px + .119vw, 17px);    /* body, player names, rules */
+    --text-md: clamp(16px, 15.14px + .238vw, 18px);      /* inputs (16px+: no zoom on iOS), buttons, rows */
+    --text-lg: clamp(18px, 16.71px + .357vw, 21px);      /* card and section titles (h2) */
+    --text-xl: clamp(20px, 18.29px + .476vw, 24px);      /* dialog titles */
+    --text-2xl: clamp(24px, 22.29px + .476vw, 28px);     /* the host sticker title */
+    --text-h1: clamp(30px, 20.57px + 2.619vw, 52px);     /* screen titles */
+    --text-lead: clamp(16px, 14.29px + .476vw, 20px);    /* the line under a screen title */
+    --text-brand: clamp(20px, 18.29px + .476vw, 24px);
+    --text-hero: clamp(58px, 40px + 5vw, 100px);         /* the name sticker, the one loud thing */
+    --text-hero-line: clamp(19px, 16px + .833vw, 26px);
+    --text-title: clamp(28px, 22.86px + 1.429vw, 40px);  /* the developer page title */
+    --text-stat: clamp(30px, 25.71px + 1.19vw, 40px);    /* developer metrics */
+    --text-code: clamp(34px, 27.14px + 1.905vw, 50px);   /* room code */
+    --text-timer: clamp(20px, 18.29px + .476vw, 24px);
+    --text-choice: clamp(16px, 14.29px + .476vw, 20px);
+    --text-badge: clamp(13px, 12.57px + .119vw, 14px);
+    /* Question text, picked by length (play.js sets data-length on #question-text). */
+    --text-q-short: clamp(23px, 18.29px + 1.31vw, 34px);
+    --text-q-medium: clamp(21px, 17.14px + 1.071vw, 30px);
+    --text-q-long: clamp(18.5px, 15.29px + .893vw, 26px);
+    --text-q-very-long: clamp(16.5px, 14.14px + .655vw, 22px);
+    --text-q-hero: clamp(26px, 21.71px + 1.19vw, 36px);     /* a short question with no picture */
+    /* Component scale. Tap targets never go under 44px; main buttons are 48px on phones, 52px on desktop. */
+    --control-h: clamp(48px, 46.29px + .476vw, 52px);
+    --control-h-lg: clamp(52px, 49.43px + .714vw, 58px);
+    --control-h-sm: 44px;
+    --field-h: clamp(50px, 48.29px + .476vw, 54px);
+    --choice-h: clamp(54px, 46.29px + 2.143vw, 72px);
+    --choice-gap: clamp(10px, 8.29px + .476vw, 14px);
+    --choice-letter: clamp(32px, 30.29px + .476vw, 36px);
+    --timer-h: clamp(40px, 37.43px + .714vw, 46px);
+    --row-h: clamp(52px, 49.43px + .714vw, 58px);         /* result rows */
+    --chip-h: 44px;                                       /* player name tags */
+    /* Icons follow the text beside them: 18px next to small button text, 20px next to body-size text. */
+    --icon-sm: 18px;
+    --icon-md: 20px;
+    --icon-tile: clamp(46px, 43.43px + .714vw, 52px);     /* the feature badges */
+    /* Round markers: small (counts, rule numbers, the category tick) and medium (places, "أو"). */
+    --badge-sm: 28px;
+    --badge-md: 36px;
+    /* Passing toasts float above the floating action bars. */
+    --toast-offset: calc(var(--control-h-lg) + var(--space-9));
 }
 
 /* Night: the same pieces under a deep indigo sky, with the flame accent. */
@@ -169,9 +245,9 @@ body {
     background-size: 26px 26px;
     color: var(--text);
     font-family: var(--font-arabic);
-    font-size: 16px;
+    font-size: var(--text-base);
     font-weight: 400;
-    line-height: 1.6;
+    line-height: var(--leading-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     -webkit-text-size-adjust: 100%;
@@ -182,13 +258,17 @@ code, kbd, samp, pre { font-family: var(--font-arabic); }
 button { touch-action: manipulation; -webkit-tap-highlight-color: transparent; color: inherit; }
 button, input, .panel, .screen { min-width: 0; }
 h1, h2, p { margin: 0; }
-h1 { font-family: var(--font-display); font-weight: 800; line-height: 1.3; }
-h2 { font-family: var(--font-display); font-weight: 700; line-height: 1.3; }
+h1, h2 { font-family: var(--font-display); line-height: var(--leading-tight); text-wrap: balance; }
+h1 { font-weight: 800; }
+h2 { font-weight: 700; }
+p { text-wrap: pretty; }
 body:has(dialog[open]) { overflow: hidden; }
 [hidden], .hidden { display: none !important; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 /* break-word only splits a word that can't fit; "anywhere" cut Arabic names mid-word and broke letter joining. */
 h1, h2, p, bdi, .player-name { overflow-wrap: break-word; }
+/* Player names: an unbroken name (a long Latin handle) ends in an ellipsis instead of breaking mid-word. */
+.player-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 ::selection { background: var(--accent-soft); }
 
 /* ---------- Page decoration ----------
@@ -212,30 +292,30 @@ h1, h2, p, bdi, .player-name { overflow-wrap: break-word; }
 }
 .header-inner {
     width: 100%;
-    max-width: 1120px;
+    max-width: var(--page-max);
     min-height: var(--header-height);
     margin: 0 auto;
-    padding: 6px var(--gutter-right) 6px var(--gutter-left);
+    padding: var(--space-2) var(--gutter-right) var(--space-2) var(--gutter-left);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: var(--space-4);
 }
 /* The wordmark is a sticker: tilted, outlined, with the spark beside it. */
 .brand {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    min-height: 44px;
-    padding: 2px 14px 0;
+    gap: var(--space-2);
+    min-height: var(--control-h-sm);
+    padding: var(--nudge) var(--space-4) 0;
     border: var(--line) solid var(--ink);
-    border-radius: 14px 14px 4px 14px;
+    border-radius: var(--shape-control);
     background: var(--pop);
     color: var(--pop-text);
-    box-shadow: 0 3px 0 var(--ink);
+    box-shadow: var(--shadow-small);
     font-family: var(--font-display);
-    font-size: 22px;
+    font-size: var(--text-brand);
     font-weight: 800;
     line-height: 1.2;
     text-decoration: none;
@@ -243,25 +323,25 @@ h1, h2, p, bdi, .player-name { overflow-wrap: break-word; }
     cursor: pointer;
     transition: rotate 220ms var(--ease-bounce), transform 90ms ease, box-shadow 90ms ease;
 }
-.brand svg { flex: 0 0 18px; width: 18px; height: 18px; fill: currentColor; }
+.brand svg { flex: 0 0 .8em; width: .8em; height: .8em; fill: currentColor; }
 .brand:disabled { cursor: default; opacity: 1; }
 .menu-toggle {
     display: grid;
     place-items: center;
-    flex: 0 0 44px;
-    width: 44px;
-    height: 44px;
+    flex: 0 0 var(--control-h-sm);
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
     padding: 0;
     border: var(--line) solid var(--ink);
-    border-radius: 14px;
+    border-radius: var(--radius-small);
     background: var(--surface-muted);
     color: var(--text);
-    box-shadow: 0 3px 0 var(--ink);
+    box-shadow: var(--shadow-small);
     cursor: pointer;
     transition: transform 90ms ease, box-shadow 90ms ease, background-color 160ms ease;
 }
 .menu-toggle svg { stroke-width: 2.4; }
-:is(.brand, .menu-toggle, .dialog-close):active:not(:disabled) { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
+:is(.brand, .menu-toggle, .dialog-close):active:not(:disabled) { transform: translateY(var(--press)); box-shadow: var(--shadow-pressed); }
 .sun-icon { display: none; }
 [data-theme="dark"] .moon-icon { display: none; }
 [data-theme="dark"] .sun-icon { display: block; }
@@ -275,17 +355,17 @@ h1, h2, p, bdi, .player-name { overflow-wrap: break-word; }
     flex-direction: column;
     justify-content: flex-start;
     margin: 0 auto;
-    padding: 28px var(--gutter-right) max(32px, env(safe-area-inset-bottom, 0px)) var(--gutter-left);
+    padding: var(--space-5) var(--gutter-right) max(var(--space-6), env(safe-area-inset-bottom, 0px)) var(--gutter-left);
 }
 /* No forwards fill: a finished animation must not keep a transform, or fixed toasts would anchor to the screen. */
 .screen { animation: screen-in 380ms var(--ease-page) backwards; }
-.screen-heading { text-align: center; margin-bottom: 28px; color: var(--page-text); }
-.screen-heading h1 { font-size: clamp(32px, 9vw, 52px); line-height: 1.25; }
-.screen-heading p { margin-top: 6px; color: var(--page-muted); font-size: 17px; font-weight: 500; line-height: 1.7; }
+.screen-heading { text-align: center; margin-bottom: var(--space-5); color: var(--page-text); }
+.screen-heading h1 { font-size: var(--text-h1); }
+.screen-heading p { max-width: 36ch; margin: var(--space-2) auto 0; color: var(--page-muted); font-size: var(--text-lead); font-weight: 500; }
 h1[tabindex="-1"]:focus { outline: none; }
 
 .panel {
-    padding: var(--panel-pad);
+    padding: var(--panel-pad-top) var(--panel-pad) var(--panel-pad);
     background: var(--surface);
     border: var(--line) solid var(--ink);
     border-radius: var(--shape-panel);
@@ -293,13 +373,14 @@ h1[tabindex="-1"]:focus { outline: none; }
 }
 
 /* ---------- Entry screens (name, home) ----------
-   The first screen is a stage as tall as the phone: hero and card sit a little above its middle
-   (more room below than above, the optical center), and the feature band starts below the fold. */
+   On phones the hero and card take the room they need and the feature band follows one step later
+   (the card-to-band gap is the hero-to-card gap plus a little), so the page reads as one stack
+   instead of a full screen of sky. On desktop the first screen stays a stage as tall as the window,
+   hero and card a little above its middle, and the band starts below the fold. */
 .container:has(:is(#name-screen, #home-screen):not(.hidden)) {
-    min-height: calc(100vh - var(--header-height) - var(--line));
-    min-height: calc(100svh - var(--header-height) - var(--line) - env(safe-area-inset-top, 0px));
     justify-content: center;
-    padding: var(--space-6) var(--gutter-right) calc(var(--space-8) + env(safe-area-inset-bottom, 0px)) var(--gutter-left);
+    padding: clamp(var(--space-5), 5vh, var(--space-7)) var(--gutter-right) var(--section-gap) var(--gutter-left);
+    padding-top: clamp(var(--space-5), 5svh, var(--space-7));
 }
 
 /* ---------- Name ---------- */
@@ -311,23 +392,23 @@ h1[tabindex="-1"]:focus { outline: none; }
 .hero-mark {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 28px 2px;
-    border: 4px solid var(--ink);
-    border-radius: 30px 30px 8px 30px;
+    gap: .16em;
+    padding: .08em .42em .02em;
+    border: var(--line-thick) solid var(--ink);
+    border-radius: var(--shape-hero);
     background: var(--pop);
     color: var(--pop-text);
-    box-shadow: 0 9px 0 var(--ink);
-    font-size: clamp(54px, 19vw, 104px);
+    box-shadow: var(--shadow-raised);
+    font-size: var(--text-hero);
     line-height: 1.3;
     rotate: -4deg;
     animation: sticker-in 620ms var(--ease-bounce) backwards;
 }
 .hero-mark svg { flex: 0 0 .5em; width: .5em; height: .5em; fill: currentColor; }
-.hero-line { font-size: clamp(20px, 5.5vw, 28px); font-weight: 600; }
+.hero-line { font-size: var(--text-hero-line); font-weight: 600; }
 .name-entry {
     width: 100%;
-    padding: var(--card-pad);
+    padding: var(--panel-pad-top) var(--panel-pad) var(--panel-pad);
     background: var(--surface);
     border: var(--line) solid var(--ink);
     border-radius: var(--shape-panel);
@@ -338,33 +419,32 @@ h1[tabindex="-1"]:focus { outline: none; }
 #name-screen #name-error { margin-top: var(--space-2); }
 #play-button { margin-top: var(--space-4); }
 .continue-button { width: 100%; }
-.continue-button svg, .room-action-icon { flex: 0 0 22px; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.continue-button svg, .room-action-icon { flex: 0 0 var(--icon-md); width: var(--icon-md); height: var(--icon-md); fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- Home ---------- */
 #home-screen .screen-heading { margin-bottom: var(--section-gap); }
-#home-screen .screen-heading p { margin-top: var(--space-2); }
 #player-name { font-weight: 800; }
-.room-entry { padding: var(--card-pad); }
-.room-entry h2 { font-size: 21px; }
+.room-entry { padding: var(--panel-pad-top) var(--panel-pad) var(--panel-pad); }
+.room-entry h2 { font-size: var(--text-lg); }
 .room-create #create-button { margin-top: var(--space-4); }
 .room-join label { margin-top: var(--space-3); }
 .room-join .field-action { margin-top: var(--space-4); }
-.divider { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0; color: var(--muted); font-size: 15px; font-weight: 500; }
-.divider::before, .divider::after { content: ""; flex: 1; border-top: 2px dashed var(--border); }
-.divider span { display: grid; place-items: center; min-width: 40px; height: 40px; padding: 2px 8px 0; border: 2px solid var(--border); border-radius: 50%; }
+.divider { display: flex; align-items: center; gap: var(--space-3); margin: var(--space-5) 0; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
+.divider::before, .divider::after { content: ""; flex: 1; border-top: var(--line-thin) dashed var(--border); }
+.divider span { display: grid; place-items: center; min-width: var(--badge-md); height: var(--badge-md); padding: 0 var(--space-2); border: var(--line-thin) solid var(--border); border-radius: 50%; line-height: 1; }
 
 /* ---------- Forms ---------- */
-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 15px; font-weight: 500; }
-.name-card #name-label { color: var(--text); font-family: var(--font-display); font-size: 21px; font-weight: 800; }
+label { display: block; margin-bottom: var(--space-2); color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
+.name-card #name-label { color: var(--text); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 800; }
 input, select, textarea {
     width: 100%;
-    min-height: 56px;
-    padding: 12px 16px;
+    min-height: var(--field-h);
+    padding: var(--space-3) var(--space-4);
     color: var(--text);
     background-color: var(--field);
-    border: 2px solid var(--ink);
+    border: var(--line-thin) solid var(--ink);
     border-radius: var(--shape-control);
-    font-size: 17px;
+    font-size: var(--text-md);
     font-weight: 500;
     transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
@@ -372,9 +452,9 @@ textarea { resize: vertical; }
 select {
     appearance: none;
     -webkit-appearance: none;
-    padding-inline-end: 48px;
+    padding-inline-end: var(--space-7);
     background-image: url("images/chevron.svg");
-    background-position: left 18px center;
+    background-position: left var(--space-4) center;
     background-size: 14px 9px;
     background-repeat: no-repeat;
     cursor: pointer;
@@ -415,29 +495,29 @@ button:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px soli
     display: inline-flex;
     justify-content: center;
     align-items: center;
-    gap: 10px;
-    min-height: 52px;
-    padding: 10px 22px 8px;
+    gap: var(--space-3);
+    min-height: var(--control-h);
+    padding: calc(var(--space-2) + var(--nudge)) var(--space-5) var(--space-2);
     border: var(--line) solid var(--ink);
     border-radius: var(--shape-control);
     font-family: var(--font-display);
-    font-size: 18px;
+    font-size: var(--text-md);
     font-weight: 700;
-    line-height: 1.3;
+    line-height: var(--leading-snug);
     cursor: pointer;
-    box-shadow: 0 5px 0 var(--ink);
+    box-shadow: var(--shadow-small);
     transition: transform 90ms ease, box-shadow 90ms ease, background-color 160ms ease, color 160ms ease, opacity 160ms ease;
 }
 .primary { background: var(--pop); color: var(--pop-text); }
 .secondary { background: var(--surface); color: var(--text); }
-.text-button { min-height: 44px; padding: 8px 16px 6px; border-color: transparent; background: transparent; color: var(--page-muted); box-shadow: none; font-family: var(--font-arabic); font-size: 15px; font-weight: 500; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px; }
+.text-button { min-height: var(--control-h-sm); padding: var(--space-2) var(--space-4); border-color: transparent; background: transparent; color: var(--page-muted); box-shadow: none; font-family: var(--font-arabic); font-size: var(--text-sm); font-weight: 500; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 5px; }
 .panel .text-button, dialog .text-button { color: var(--muted); }
 .full-width { width: 100%; }
-.field-action { margin-top: 14px; }
-.compact-button { min-height: 44px; padding: 6px 14px 4px; font-size: 16px; white-space: nowrap; box-shadow: 0 4px 0 var(--ink); }
+.field-action { margin-top: var(--space-3); }
+.compact-button { min-height: var(--control-h-sm); padding-inline: var(--space-4); font-size: var(--text-base); white-space: nowrap; }
 button:disabled { cursor: not-allowed; }
 .primary:disabled, .secondary:disabled { opacity: .5; }
-:is(.primary, .secondary):active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+:is(.primary, .secondary):active:not(:disabled) { transform: translateY(var(--press)); box-shadow: var(--shadow-pressed); }
 @media (hover: hover) {
     .primary:hover:not(:disabled) { background: var(--pop-hover); }
     .secondary:hover:not(:disabled), .menu-toggle:hover { background: var(--surface-muted); }
@@ -447,36 +527,36 @@ button:disabled { cursor: not-allowed; }
 }
 
 /* ---------- Messages ---------- */
-.error { margin-top: 10px; color: var(--error); font-size: 15px; font-weight: 500; line-height: 1.6; }
+.error { margin-top: var(--space-3); color: var(--error); font-size: var(--text-sm); font-weight: 500; }
 .error:empty { display: none; }
-.helper-message { margin-top: 10px; color: var(--muted); font-size: 15px; line-height: 1.7; }
+.helper-message { margin-top: var(--space-3); color: var(--muted); font-size: var(--text-sm); }
 .helper-message:empty { display: none; }
-.hint { margin-bottom: 12px; color: var(--muted); font-size: 15px; text-align: center; }
+.hint { margin-bottom: var(--space-3); color: var(--muted); font-size: var(--text-sm); text-align: center; }
 .hint:empty { display: none; }
-.small-label { color: var(--muted); font-size: 14px; font-weight: 500; }
-.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
-.section-heading h2 { font-size: 21px; }
-.count-badge { display: grid; place-items: center; min-width: 32px; min-height: 30px; padding: 3px 9px 0; border: 2px solid var(--ink); border-radius: var(--radius-pill); background: var(--pop); color: var(--pop-text); font-family: var(--font-display); font-size: 16px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.small-label { color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.section-heading h2 { font-size: var(--text-lg); }
+.count-badge { display: grid; place-items: center; min-width: var(--badge-sm); min-height: var(--badge-sm); padding: var(--nudge) var(--space-2) 0; border: var(--line-thin) solid var(--ink); border-radius: var(--radius-pill); background: var(--pop); color: var(--pop-text); font-family: var(--font-display); font-size: var(--text-badge); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 
 /* Passing messages (copied, could not connect, wrong code) float over the page as a toast,
    so the boxes underneath never jump. effects.js replays the entrance for each new message. */
 :is(#site-error, #copy-message, #lobby-error, #home-error:not(.sr-only), .admin-message) {
     position: fixed;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 168px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--toast-offset));
     left: 50%;
     z-index: 900;
     width: max-content;
-    max-width: min(440px, calc(100% - 32px));
+    max-width: min(440px, calc(100% - 2 * var(--space-4)));
     margin: 0;
-    padding: 10px 18px 8px;
+    /* Tajawal sits a little high in its line: one step more on top centres the line optically. */
+    padding: var(--space-3) var(--space-4) var(--space-2);
     border: var(--line) solid var(--ink);
     border-radius: var(--shape-control);
     background: var(--surface);
     color: var(--text);
-    box-shadow: 0 5px 0 var(--ink);
-    font-size: 15px;
+    box-shadow: var(--shadow-small);
+    font-size: var(--text-sm);
     font-weight: 500;
-    line-height: 1.6;
     text-align: center;
     pointer-events: none;
     transform: translateX(-50%);
@@ -493,55 +573,115 @@ button:disabled { cursor: not-allowed; }
 @keyframes toast-still { 0%, 92% { opacity: 1; visibility: visible; } 100% { opacity: 0; visibility: hidden; } }
 
 /* ---------- Lobby basics (layout in categories.css) ---------- */
-.room-share { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.room-share { display: flex; justify-content: space-between; align-items: center; gap: var(--space-4); }
 .room-share > div { min-width: 0; }
 .room-code {
     display: block;
-    margin-top: 6px;
-    padding: 4px 18px 0 22px;
+    margin-top: var(--space-2);
+    /* The tracking after the last letter would push the code off centre: the start side gets it back. */
+    padding: var(--nudge) var(--space-4) 0 calc(var(--space-4) + .12em);
     border: var(--line) solid var(--ink);
-    border-radius: 18px 18px 5px 18px;
+    border-radius: var(--shape-control);
     background: var(--pop);
     color: var(--pop-text);
     box-shadow: var(--shadow-small);
     font-family: var(--font-display);
-    font-size: clamp(36px, 11vw, 52px);
+    font-size: var(--text-code);
     font-weight: 800;
-    line-height: 1.35;
-    letter-spacing: 6px;
+    line-height: 1.2;
+    letter-spacing: .12em;
     font-variant-numeric: tabular-nums;
     rotate: -2deg;
     user-select: all;
     -webkit-user-select: all;
 }
-.player { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px; padding: 12px 0; }
-.player-name { min-width: 0; font-size: 16px; font-weight: 500; unicode-bidi: plaintext; text-align: right; }
-.host { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 3px 10px 1px; border: 2px solid var(--ink); border-radius: var(--radius-pill); background: var(--pop); color: var(--pop-text); font-family: var(--font-display); font-size: 13px; font-weight: 800; line-height: 1.4; rotate: -3deg; }
+.player { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--chip-h); padding: var(--space-3) 0; }
+.player-name { min-width: 0; font-size: var(--text-base); font-weight: 500; text-align: right; }
+.host { display: inline-flex; align-items: center; flex: 0 0 auto; padding: var(--nudge) var(--space-3) 0; border: var(--line-thin) solid var(--ink); border-radius: var(--radius-pill); background: var(--pop); color: var(--pop-text); font-family: var(--font-display); font-size: var(--text-xs); font-weight: 800; line-height: 1.4; rotate: -3deg; }
 
 /* ---------- Sticky actions ----------
-   The host's next step (start, next question) stays under the thumb instead of below the fold. */
+   The host's next step (start, next question) stays under the thumb instead of below the fold.
+   It is a whole floating card at every width: full outline, the house corner and its own shadow,
+   held inside the gutters and above the home indicator. It is sticky, so at the end of the page it
+   settles into its place in the flow and never hides the last content. */
 .action-bar {
     position: sticky;
-    bottom: 0;
+    bottom: calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
     z-index: 5;
-    margin: 20px -16px 0;
-    padding: 12px 16px max(14px, env(safe-area-inset-bottom, 0px));
-    border-top: var(--line) solid var(--ink);
+    width: 100%;
+    max-width: 640px;
+    margin: var(--stack-gap) auto 0;
+    /* Its content lines up with the content of the card above it. */
+    padding: var(--space-3) var(--panel-pad);
+    border: var(--line) solid var(--ink);
+    border-radius: var(--shape-panel);
     background: var(--surface);
+    box-shadow: var(--shadow);
 }
-.action-bar .hint, .action-bar .helper-message { margin-block: 0 10px; font-size: 15px; }
-.game-actions:has(#next-question-button.hidden) { position: static; margin-inline: 0; padding: 0; border: 0; background: none; }
+.action-bar .hint, .action-bar .helper-message { margin-block: 0 var(--space-2); font-size: var(--text-sm); line-height: 1.5; text-wrap: balance; }
+/* Guests in review only get a quiet line under the card, no bar. */
+.game-actions:has(#next-question-button.hidden) { position: static; margin-top: var(--space-3); padding: 0; border: 0; background: none; box-shadow: none; }
 .game-actions:has(#next-question-button.hidden) #advance-message { color: var(--page-muted); }
-@media (min-width: 900px) {
-    /* On wide screens the bar is a whole card that floats above the page edge. */
-    .action-bar { bottom: 18px; width: 100%; max-width: 640px; margin: 28px auto 0; padding: 16px 24px 20px; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); box-shadow: var(--shadow); }
-    .game-actions:has(#next-question-button.hidden) { box-shadow: none; }
-}
+.game-actions:has(#next-question-button.hidden):has(#advance-message:empty) { display: none; }
+/* The host's review bar is one row: the hint beside the button (stacked on the narrowest phones). */
+.game-actions:has(#next-question-button:not(.hidden)) { bottom: calc(var(--game-gap) + env(safe-area-inset-bottom, 0px)); display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); margin-top: var(--game-gap); padding-block: var(--space-2); }
+.game-actions:has(#next-question-button:not(.hidden)) #advance-message { flex: 1 1 8em; margin: 0; text-align: start; }
+/* The button never shrinks under its label; when the row is too narrow the hint wraps above it. */
+.game-actions #next-question-button { flex: 1 0 auto; width: auto; }
+/* In the game the bar is exactly as wide as the card above it. */
+.game-actions.action-bar { max-width: none; }
 
-/* ---------- Question ---------- */
-.container:has(#game-screen:not(.hidden)) { max-width: 760px; padding-top: 18px; }
+/* ---------- Question ----------
+   On a phone the whole question (timer row, text, picture, four choices and the answer line) fits
+   the visible screen under the header, with no scrolling. The card is a column capped at the height
+   that is left (small viewport units, so the browser bars never hide a choice) and the picture is the
+   part that gives way, down to --image-min. The text steps down by length (data-length), choices get
+   tighter on short screens, and four short choices sit two by two (data-compact). If even that cannot
+   fit, play.js sets data-fit="tight" (one step smaller), then "free" (the page scrolls; nothing is clipped). */
+:root {
+    --viewport-h: 100vh;
+    --game-gap: var(--space-3);
+    /* The card's inner width, for the picture's starting height (the container's side padding, the
+       card's outline and padding taken off). */
+    --container-pad: var(--gutter-left);
+    --card-inner: calc(min(100vw, 760px) - 2 * var(--container-pad) - 2 * var(--line) - 2 * var(--panel-pad));
+    --image-min: 72px;
+    --image-max: 30vh;
+    --game-reserve: 0px;
+    /* The host's review bar: one button row, its padding and outline, and a little air. */
+    --game-bar: calc(var(--control-h) + 3 * var(--space-2) + 2 * var(--line));
+    --game-top-start: var(--space-3); /* the timer row's top padding */
+    --game-top-end: var(--space-2);   /* the timer row's bottom padding */
+    --timer-w: calc(var(--timer-h) + var(--space-4));
+    --track-h: 12px;
+}
+@supports (height: 100svh) { :root { --viewport-h: 100svh; --image-max: 30svh; } }
+.container:has(#game-screen:not(.hidden)) {
+    max-width: 760px;
+    padding-top: var(--game-gap);
+    padding-bottom: calc(var(--game-gap) + env(safe-area-inset-bottom, 0px));
+}
+/* In review the host's bar sits right under the card, so the card leaves room for it; a guest's
+   waiting line gets a little room too. */
+#game-screen:has(#next-question-button:not(.hidden)) { --game-reserve: calc(var(--game-bar) + var(--game-gap)); }
+#game-screen:has(#next-question-button.hidden):has(#advance-message:not(:empty)) { --game-reserve: calc(1.5em + var(--space-3)); }
 /* No overflow clipping here: it would stop the top bar from sticking. */
-.question-panel { position: relative; isolation: isolate; padding-top: 0; }
+.question-panel {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex-direction: column;
+    /* The screen minus the header, the gaps around the card, its shadow and the review bar. */
+    max-height: calc(var(--viewport-h) - var(--header-height) - var(--line) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2 * var(--game-gap) - var(--depth-2) - var(--game-reserve));
+    padding-top: 0;
+    padding-bottom: var(--space-4);
+}
+.question-panel > * { flex-shrink: 0; }
+/* During a match the page is exactly one screen: the footer would only add a scroll. */
+body:has(#game-screen:not(.hidden)) .site-footer { display: none; }
+.question-panel[data-fit="free"] { max-height: none; }
+/* When the page has to scroll, the host's bar waits after the card instead of floating over a choice. */
+.question-panel[data-fit="free"] ~ .game-actions { position: static; }
 .game-top {
     position: sticky;
     top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + var(--line));
@@ -550,13 +690,13 @@ button:disabled { cursor: not-allowed; }
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
-    gap: 10px 16px;
+    gap: var(--space-2) var(--space-4);
     margin: 0 calc(-1 * var(--panel-pad));
-    padding: 14px var(--panel-pad) 12px;
+    padding: var(--game-top-start) var(--panel-pad) var(--game-top-end);
     border-radius: calc(var(--radius-panel) - var(--line)) calc(var(--radius-panel) - var(--line)) 0 0;
     background: var(--surface);
 }
-#question-number { color: var(--muted); font-size: 15px; font-weight: 500; line-height: 1.5; }
+#question-number { color: var(--muted); font-size: var(--text-sm); font-weight: 500; line-height: 1.5; }
 /* ومضة: a single sweep of light across a fresh question, then stillness. */
 .question-panel::after {
     content: "";
@@ -579,16 +719,16 @@ button:disabled { cursor: not-allowed; }
     display: grid;
     place-items: center;
     flex: 0 0 auto;
-    min-width: 58px;
-    height: 46px;
-    padding: 4px 12px 0;
+    width: var(--timer-w);
+    height: var(--timer-h);
+    padding: var(--nudge) var(--space-2) 0;
     border: var(--line) solid var(--ink);
-    border-radius: 16px;
+    border-radius: var(--radius-small);
     background: var(--pop);
     color: var(--pop-text);
-    box-shadow: 0 3px 0 var(--ink);
+    box-shadow: var(--shadow-small);
     font-family: var(--font-display);
-    font-size: 24px;
+    font-size: var(--text-timer);
     font-weight: 800;
     line-height: 1;
     font-variant-numeric: tabular-nums;
@@ -596,119 +736,226 @@ button:disabled { cursor: not-allowed; }
 }
 .timer[data-low="true"] { background: var(--error-fill); color: var(--on-fill); animation: wiggle 500ms ease-in-out infinite; }
 /* A closed question says so instead of freezing on the last second. */
-.timer[data-state="closed"] { background: var(--surface-muted); color: var(--muted); animation: none; }
+.timer[data-state="closed"] { background: var(--surface-muted); color: var(--muted); font-size: var(--text-sm); animation: none; }
 .timer[data-state="closed"] #timer { display: none; }
-.timer[data-state="closed"]::after { content: "انتهى"; font-size: 17px; font-weight: 800; }
-.timer-track { flex: 0 0 100%; height: 14px; overflow: hidden; border: 2px solid var(--ink); border-radius: var(--radius-pill); background: var(--surface-muted); }
+.timer[data-state="closed"]::after { content: "انتهى"; }
+.timer-track { flex: 0 0 100%; height: var(--track-h); overflow: hidden; border: var(--line-thin) solid var(--ink); border-radius: var(--radius-pill); background: var(--surface-muted); }
 .timer-track span { display: block; height: 100%; background: var(--success-fill); transform-origin: right; transform: scaleX(var(--time-left, 1)); transition: transform 220ms linear, background-color 200ms ease; }
 .question-panel:has(.timer[data-low="true"]) .timer-track span { background: var(--error-fill); }
 .question-panel:has(.timer[data-state="closed"]) .timer-track span { opacity: .3; }
-/* The box keeps its size before the picture arrives, so choices never jump under a finger. */
+.question {
+    --q-size: var(--text-q-medium);
+    max-width: 34ch;
+    margin: var(--space-3) auto var(--space-4);
+    font-size: var(--q-size);
+    /* Snug, not tight: Arabic marks (ُ ّ) above and below need the room. */
+    line-height: var(--leading-snug);
+    text-align: center;
+}
+.question[data-length="short"] { --q-size: var(--text-q-short); }
+.question[data-length="long"] { --q-size: var(--text-q-long); }
+/* Nearly a paragraph: it reads as one, from the start edge. */
+.question[data-length="very-long"] { --q-size: var(--text-q-very-long); max-width: none; margin-inline: 0; line-height: 1.45; font-weight: 700; text-align: start; text-wrap: pretty; }
+/* A short question with no picture leaves room: it can be a little louder on a phone. */
+.question-panel:not(:has(.question-image:not(.hidden))) .question[data-length="short"] { --q-size: var(--text-q-hero); }
+/* The box keeps its size before the picture arrives, so choices never jump under a finger.
+   It is the flexible part of the card: it shrinks (the picture stays whole, letterboxed) before the text does. */
 .question-image {
     display: block;
-    width: 100%;
+    /* Its height starts from the card's width at 16:10 (capped) and shrinks first when room is short;
+       its width follows the picture's own shape, so a small box hugs the picture instead of
+       letterboxing it in a wide frame. Before the picture loads, 16:10 keeps the place. */
+    flex: 0 1 min(var(--image-max), calc(var(--card-inner) / 1.6));
+    align-self: center;
+    width: auto;
+    max-width: 100%;
     height: auto;
-    aspect-ratio: 16 / 10;
-    max-height: 34vh;
-    max-height: 34dvh;
-    margin: 0 auto 18px;
+    aspect-ratio: auto 16 / 10;
+    min-height: var(--image-min);
+    max-height: var(--image-max);
+    margin: 0 auto var(--space-4);
     object-fit: contain;
     border: var(--line) solid var(--ink);
-    border-radius: 18px;
+    border-radius: var(--shape-control);
     background: var(--surface-muted);
 }
-.question { margin: 18px 0 22px; font-size: clamp(23px, 6vw, 34px); line-height: 1.45; text-align: center; text-wrap: balance; }
-.choices { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding-bottom: 5px; }
+/* "free" never makes the picture bigger again: it stays at its smallest. */
+.question-panel[data-fit="free"] .question-image { flex-basis: var(--image-min); }
+.choices { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--choice-gap); padding-bottom: var(--space-1); }
+/* Four short choices: two by two, so the card is half as tall. */
+.choices[data-compact="true"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .choice {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-3);
     width: 100%;
-    min-height: 62px;
-    padding: 10px 12px;
+    min-height: var(--choice-h);
+    padding: var(--space-2) var(--space-3);
     border: var(--line) solid var(--ink);
-    border-radius: 18px 18px 4px 18px;
+    border-radius: var(--shape-control);
     background: var(--surface);
     color: var(--text);
-    box-shadow: 0 5px 0 var(--ink);
+    box-shadow: var(--shadow-small);
     text-align: start;
     cursor: pointer;
-    font-size: 17px;
+    font-size: var(--text-choice);
     font-weight: 500;
-    line-height: 1.5;
+    line-height: var(--leading-snug);
     transition: transform 90ms ease, box-shadow 90ms ease, background-color 160ms ease, color 160ms ease, opacity 160ms ease;
 }
-.choice-letter { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px; padding-top: 3px; border: 2px solid var(--ink); border-radius: 12px; background: var(--candy-pink); color: var(--on-fill); font-family: var(--font-display); font-size: 18px; font-weight: 800; line-height: 1; text-align: center; direction: ltr; transition: background-color 160ms ease; }
+.choice-letter { display: grid; place-items: center; flex: 0 0 var(--choice-letter); width: var(--choice-letter); height: var(--choice-letter); padding-top: var(--nudge); border: var(--line-thin) solid var(--ink); border-radius: var(--radius-small); background: var(--candy-pink); color: var(--on-fill); font-family: var(--font-display); font-size: calc(var(--choice-letter) * .5); font-weight: 800; line-height: 1; text-align: center; direction: ltr; transition: background-color 160ms ease; }
 .choice:nth-child(2) .choice-letter { background: var(--candy-blue); }
 .choice:nth-child(3) .choice-letter { background: var(--candy-yellow); }
 .choice:nth-child(4) .choice-letter { background: var(--candy-mint); }
 .choice-text { min-width: 0; flex: 1; overflow-wrap: break-word; text-align: start; }
-.choice:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+.choices[data-compact="true"] .choice { gap: var(--space-2); }
+.choice:active:not(:disabled) { transform: translateY(var(--press)); box-shadow: var(--shadow-pressed); }
 .choice:disabled { cursor: default; }
 .choices:has(.selected) .choice:disabled:not(.selected):not(.is-correct) { opacity: .55; }
 /* A picked answer stays pressed in. */
-.choice.selected { background: var(--pop); color: var(--pop-text); transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
+.choice.selected { background: var(--pop); color: var(--pop-text); transform: translateY(var(--press)); box-shadow: var(--shadow-pressed); }
 .choice.is-correct { background: var(--success-fill); color: var(--on-fill); opacity: 1; animation: pop 420ms var(--ease-bounce); }
 .choice.is-wrong { background: var(--error-fill); color: var(--on-fill); animation: shake 380ms ease; }
 .choice.selected .choice-letter,
 .choice.is-correct .choice-letter,
 .choice.is-wrong .choice-letter { background: #ffffff; color: var(--on-fill); }
 @media (hover: hover) {
-    .choice:hover:not(:disabled) { background: var(--surface-muted); transform: translateY(-2px); box-shadow: 0 7px 0 var(--ink); }
+    .choice:hover:not(:disabled) { background: var(--surface-muted); transform: translateY(-2px); box-shadow: var(--shadow); }
 }
-/* One reserved line: "answer sent" and the review result appear without pushing the board down. */
-.answer-message { min-height: 28px; margin-top: 16px; color: var(--text); font-size: 16px; font-weight: 500; line-height: 28px; text-align: center; }
-#advance-message { margin: 0 0 10px; text-align: center; }
-.answer-board { margin-top: 20px; padding: 18px var(--panel-pad) var(--panel-pad); border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); box-shadow: var(--shadow); }
-.answer-board h2 { font-size: 20px; }
-.answer-board > p { color: var(--muted); font-size: 14px; }
-#answer-leaders { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
-.answer-leader { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 12px; min-height: 48px; padding: 6px 10px; border: 2px dashed var(--border); border-radius: var(--shape-control); color: var(--muted); font-size: 16px; }
-.answer-rank { display: grid; place-items: center; width: 32px; height: 32px; padding-top: 2px; border: 2px solid var(--border); border-radius: 50%; direction: ltr; font-family: var(--font-display); font-size: 15px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
-.answer-player { min-width: 0; justify-self: stretch; overflow-wrap: break-word; text-align: right; font-weight: 500; }
-/* Winning places: a crown for the first, a distinct color for each other place. */
-.answer-leader.is-filled { --place: var(--accent); border: 2px solid var(--ink); background: color-mix(in srgb, var(--place) 55%, var(--surface)); color: var(--text); animation: pop 420ms var(--ease-bounce); }
-.answer-leader.is-filled .answer-rank { position: relative; border-color: var(--ink); background: var(--place); color: var(--on-fill); }
-.answer-leader.is-me .answer-player::after { content: " (أنت)"; font-weight: 400; }
-:is(.answer-leader, .result-row).place-1 { --place: var(--place-1); } :is(.answer-leader, .result-row).place-2 { --place: var(--place-2); }
-:is(.answer-leader, .result-row).place-3 { --place: var(--place-3); } :is(.answer-leader, .result-row).place-4 { --place: var(--place-4); }
-:is(.answer-leader, .result-row).place-5 { --place: var(--place-5); } :is(.answer-leader, .result-row).place-6 { --place: var(--place-6); }
-:is(.answer-leader, .result-row).place-7 { --place: var(--place-7); }
-[data-theme="dark"] :is(.answer-leader.is-filled, .result-row[class*="place-"]) { background: color-mix(in srgb, var(--place) 30%, var(--surface)); }
-.crown { position: absolute; top: -17px; left: 50%; width: 24px; height: 24px; transform: translateX(-50%) rotate(-8deg); fill: var(--place-1); stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; animation: crown-in 520ms var(--ease-bounce) both; }
+/* One reserved line: "answer sent" and the review result appear without pushing anything. */
+.answer-message { min-height: 1.5em; margin-top: var(--space-3); color: var(--text); font-size: var(--text-base); font-weight: 500; line-height: 1.5; text-align: center; }
+#advance-message { margin: 0 0 var(--space-2); text-align: center; }
+/* Short phones (an iPhone SE, small Androids): tighter rhythm, smaller choices; still 44px+ taps. */
+@media (max-height: 760px) and (orientation: portrait) {
+    :root { --game-gap: var(--space-2); --choice-h: 50px; --choice-gap: var(--space-2); --choice-letter: 30px; --timer-h: 38px; --image-min: 64px; --image-max: 26svh; --track-h: 10px; --game-top-end: var(--space-1); }
+    :root { --game-top-start: var(--space-2); }
+    .question { margin-block: var(--space-2) var(--space-3); }
+    .question-image { margin-bottom: var(--space-3); }
+    .answer-message { margin-top: var(--space-2); }
+    .question-panel { padding-bottom: var(--space-3); }
+}
+@media (max-height: 660px) and (orientation: portrait) {
+    :root { --choice-h: 46px; --image-min: 56px; }
+}
+/* Last resort from play.js: one step down for type and choices. */
+.question-panel[data-fit] .question { font-size: max(16px, calc(var(--q-size) * .88)); }
+.question-panel[data-fit] .choices { --choice-h: 44px; --choice-gap: 6px; }
+.question-panel[data-fit] .choice { padding-block: 3px; font-size: 16px; line-height: 1.3; }
+/* In review nothing is tapped any more, so a tight card lowers its choices further (all one height)
+   to keep the host's bar in view; "squeeze" (review only) then lets the picture go, it was seen during
+   the question. */
+.question-panel:is([data-fit="tight"], [data-fit="squeeze"]):has(.timer[data-state="closed"]) { --image-min: 44px; }
+.question-panel:is([data-fit="tight"], [data-fit="squeeze"]):has(.timer[data-state="closed"]) .choices { --choice-h: 34px; --choice-gap: 6px; --choice-letter: 24px; grid-auto-rows: 1fr; }
+.question-panel:is([data-fit="tight"], [data-fit="squeeze"]):has(.timer[data-state="closed"]) .choice { padding-block: 2px; }
+.question-panel:is([data-fit="squeeze"], [data-fit="free"]):has(.timer[data-state="closed"]) .question-image { display: none; }
+.question-panel[data-fit="squeeze"] .question { margin-block: var(--space-2); line-height: 1.3; }
+.question-panel[data-fit="squeeze"] .choices { --choice-gap: var(--space-1); }
+.question-panel[data-fit="squeeze"] .choice { font-size: var(--text-sm); line-height: 1.2; }
+.question-panel[data-fit="squeeze"] .answer-message { margin-top: var(--space-2); font-size: var(--text-sm); }
+
+/* ---------- First correct answers ----------
+   Small plain notifications that slide in from the left edge of the screen, one per scoring place,
+   the newest under the previous: just the words ("سارة جاوب أول واحد 🥇") on a light tab that hangs
+   off the screen edge, with the place's color on that edge. They are fixed and ignore taps, so nothing
+   moves under a finger. play.js puts them over the least useful part of the screen and never over a
+   choice (under the timer row on an upright phone, under the choices sideways, in the empty margin on
+   wide screens) and shows only as many of the newest as fit there. Cleared for every question; in
+   review they fade a few seconds after the close. */
+.answer-toasts {
+    position: fixed;
+    top: var(--toast-top, calc(var(--header-height) + env(safe-area-inset-top, 0px) + var(--space-9)));
+    left: 0;
+    z-index: 15;
+    /* Laid out from the left edge; each line reads right to left inside. */
+    direction: ltr;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
+    max-width: min(68vw, 300px);
+    margin: 0;
+    padding: 0 var(--space-1) var(--space-1) 0;
+    /* The screen edge clips what slides in, so it never adds a sideways scroll. */
+    overflow: clip;
+    list-style: none;
+    pointer-events: none;
+}
+.answer-toasts:empty { display: none; }
+.answer-toast {
+    --place: var(--accent);
+    display: flex;
+    gap: .28em;
+    max-width: 100%;
+    padding: 3px var(--space-3) 1px max(var(--space-2), env(safe-area-inset-left, 0px));
+    border: var(--line-thin) solid var(--ink);
+    border-left: var(--space-1) solid var(--place);
+    border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
+    background: var(--surface);
+    box-shadow: var(--shadow-pressed);
+    color: var(--text);
+    direction: rtl;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+.answer-toast.is-past { display: none; }
+/* One line: a long name gives way (ellipsis, at its own end thanks to dir="auto"); the place never does. */
+.answer-toast-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 700; }
+.answer-toast-rest { flex: none; }
+.answer-toast.is-me { background: color-mix(in srgb, var(--pop) 34%, var(--surface)); }
+.answer-toast.is-new { animation: answer-toast-in 460ms var(--ease-page) both; }
+.answer-toasts[data-phase="review"] .answer-toast { animation: answer-toast-out 600ms var(--ease-ui) 3200ms both; }
+@keyframes answer-toast-in { from { opacity: 0; transform: translateX(-100%); } to { opacity: 1; transform: none; } }
+@keyframes answer-toast-out { from { opacity: 1; } to { opacity: 0; transform: translateX(-100%); visibility: hidden; } }
+/* Phones turned sideways: the stack sits at the bottom-left, under the choices, the newest lowest. */
+@media (orientation: landscape) and (max-height: 520px) {
+    .answer-toasts { top: auto; bottom: var(--toast-bottom, calc(var(--space-1) + env(safe-area-inset-bottom, 0px))); justify-content: flex-end; }
+}
+/* Wide screens: in the empty margin to the left of the card, every place shown. */
+@media (min-width: 1100px) {
+    .answer-toasts { top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + var(--space-6)); max-width: calc((100vw - 760px) / 2 - var(--space-4)); }
+    .answer-toast { padding-block: var(--space-1) 2px; font-size: var(--text-sm); }
+}
+
+:is(.answer-toast, .result-row).place-1 { --place: var(--place-1); } :is(.answer-toast, .result-row).place-2 { --place: var(--place-2); }
+:is(.answer-toast, .result-row).place-3 { --place: var(--place-3); } :is(.answer-toast, .result-row).place-4 { --place: var(--place-4); }
+:is(.answer-toast, .result-row).place-5 { --place: var(--place-5); } :is(.answer-toast, .result-row).place-6 { --place: var(--place-6); }
+:is(.answer-toast, .result-row).place-7 { --place: var(--place-7); }
+[data-theme="dark"] .result-row[class*="place-"] { background: color-mix(in srgb, var(--place) 30%, var(--surface)); }
+.crown { position: absolute; top: -20px; left: 50%; width: 28px; height: 28px; transform: translateX(-50%) rotate(-8deg); fill: var(--place-1); stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; animation: crown-in 520ms var(--ease-bounce) both; }
 @keyframes crown-in { from { opacity: 0; transform: translate(-50%, 6px) rotate(-30deg) scale(.4); } to { opacity: 1; transform: translateX(-50%) rotate(-8deg); } }
 
 /* ---------- Results ---------- */
-.results { display: grid; gap: 12px; margin: 8px 0 24px; }
-.result-row { position: relative; display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 60px; padding: 10px 14px; border: 2px solid var(--ink); border-radius: 18px 18px 4px 18px; background: var(--surface-muted); font-size: 17px; }
-/* Names keep their own direction (plaintext) but always sit on the right, whatever their script:
-   with plaintext, "start" would put a Latin name on the left. */
-.result-row > span:nth-child(2) { min-width: 0; font-weight: 500; overflow-wrap: break-word; unicode-bidi: plaintext; text-align: right; }
-.result-row.winner { min-height: 76px; box-shadow: var(--shadow-small); font-size: 20px; transition: background-color 600ms ease; }
+.results { display: grid; gap: var(--space-3); margin: 0 0 var(--space-5); }
+.result-row { position: relative; display: grid; grid-template-columns: var(--badge-md) minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; min-height: var(--row-h); padding: var(--space-2) var(--space-4); border: var(--line-thin) solid var(--ink); border-radius: var(--shape-control); background: var(--surface-muted); font-size: var(--text-md); }
+/* Names keep their own direction (dir="auto" from results.js) but always sit on the right, whatever
+   their script; an unbroken name ends in an ellipsis at its own end instead of breaking mid-word. */
+.result-row > span:nth-child(2) { min-width: 0; overflow: hidden; font-weight: 500; white-space: nowrap; text-overflow: ellipsis; text-align: right; }
+.result-row.winner { min-height: calc(var(--row-h) + var(--space-3)); box-shadow: var(--shadow-small); font-size: var(--text-lg); transition: background-color 600ms ease; }
 .result-row[class*="place-"] { background: color-mix(in srgb, var(--place) 55%, var(--surface)); }
 .result-row.winner > span:nth-child(2) { font-family: var(--font-display); font-weight: 700; }
-.position { position: relative; display: grid; place-items: center; width: 38px; height: 38px; padding-top: 2px; border: 2px solid var(--ink); border-radius: 50%; background: var(--surface); color: var(--text); font-family: var(--font-display); font-size: 17px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+.position { position: relative; display: grid; place-items: center; width: var(--badge-md); height: var(--badge-md); padding-top: var(--nudge); border: var(--line-thin) solid var(--ink); border-radius: 50%; background: var(--surface); color: var(--text); font-family: var(--font-display); font-size: var(--text-base); font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .result-row[class*="place-"] .position { background: var(--place); color: var(--on-fill); }
-.result-row .crown { top: -20px; width: 28px; height: 28px; }
 /* A player who dropped out keeps their place in the ranking, faded with a dashed outline like the lobby. */
 .result-row.is-away { opacity: .55; border-style: dashed; box-shadow: none; transition: opacity 300ms ease, background-color 600ms ease; }
-.result-score { white-space: nowrap; font-family: var(--font-display); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
-#results-screen .panel > button + button { margin-top: 14px; }
-#round-message { min-height: 24px; }
+.result-score { white-space: nowrap; font-family: var(--font-display); font-size: var(--text-base); font-weight: 600; font-variant-numeric: tabular-nums; }
+#results-screen .panel > button + button { margin-top: var(--space-3); }
+#round-message { min-height: 1.6em; }
 .confetti { position: fixed; inset: 0; z-index: 9000; width: 100%; height: 100%; pointer-events: none; }
-.connection-message { padding: 12px; margin-bottom: 20px; background: var(--error-bg); color: var(--error); border-radius: var(--shape-control); font-size: 15px; }
-.noscript-message { margin: 24px; text-align: center; color: var(--page-text); }
+.connection-message { padding: var(--space-3); margin-bottom: var(--space-5); background: var(--error-bg); color: var(--error); border-radius: var(--shape-control); font-size: var(--text-sm); }
+.noscript-message { margin: var(--space-5); text-align: center; color: var(--page-text); }
 
 /* ---------- Menu drawer ---------- */
 .site-menu {
     inset: 0 0 0 auto;
     margin: 0;
-    width: min(320px, calc(100vw - 56px));
+    width: min(320px, calc(100vw - var(--space-8)));
     max-width: none;
     height: 100vh;
     height: 100dvh;
     max-height: none;
-    padding: max(18px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(24px, env(safe-area-inset-bottom, 0px)) 16px;
+    padding: max(var(--space-4), env(safe-area-inset-top, 0px)) max(var(--space-4), env(safe-area-inset-right, 0px)) max(var(--space-5), env(safe-area-inset-bottom, 0px)) var(--space-4);
     border: 0;
     border-left: var(--line) solid var(--ink);
     border-radius: 0;
@@ -721,13 +968,12 @@ button:disabled { cursor: not-allowed; }
 .site-menu[open].is-closing { animation: panel-out 260ms cubic-bezier(.4, 0, .6, 1) both; }
 .site-menu::backdrop { background: var(--backdrop); animation: backdrop-in 300ms ease both; }
 .site-menu.is-closing::backdrop { animation: backdrop-out 260ms ease both; }
-.site-menu .dialog-heading { padding: 4px 4px 14px; margin-bottom: 8px; }
-.menu-panel { display: grid; gap: 6px; }
-.menu-item { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 52px; padding: 10px 14px 8px; border: var(--line) solid transparent; border-radius: var(--shape-control); background: transparent; color: var(--text); font-size: 17px; font-weight: 500; text-align: start; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease; }
-.menu-item svg { flex: 0 0 22px; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.site-menu .dialog-heading { margin-bottom: var(--space-4); padding-inline-start: var(--space-4); }
+.menu-panel { display: grid; gap: var(--space-2); }
+.menu-item { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: var(--control-h); padding: var(--space-2) var(--space-4); border: var(--line) solid transparent; border-radius: var(--shape-control); background: transparent; color: var(--text); font-size: var(--text-md); font-weight: 500; text-align: start; cursor: pointer; transition: background-color 160ms ease, border-color 160ms ease; }
+.menu-item svg { flex: 0 0 var(--icon-md); width: var(--icon-md); height: var(--icon-md); fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .menu-item:focus-visible { outline-offset: -2px; background: var(--surface-muted); }
 .menu-item:active { background: var(--surface-muted); border-color: var(--ink); }
-#theme-label { display: inline-block; line-height: 1.5; }
 .sound-off-icon, .is-muted .sound-on-icon { display: none; }
 .is-muted .sound-off-icon { display: block; }
 @media (hover: hover) {
@@ -743,36 +989,38 @@ button:disabled { cursor: not-allowed; }
 .admin-player bdi { min-width: 0; text-align: right; }
 
 /* ---------- Dialogs ---------- */
-.settings-dialog { width: min(460px, calc(100% - 32px)); max-height: calc(100dvh - 40px); padding: 22px; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); color: var(--text); box-shadow: var(--shadow-raised); }
+.settings-dialog { width: min(440px, calc(100% - 2 * var(--space-4))); max-height: calc(100dvh - 2 * var(--space-5)); padding: var(--space-5); border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); color: var(--text); box-shadow: var(--shadow-raised); }
 .settings-dialog[open] { animation: dialog-in 380ms var(--ease-bounce); }
 .settings-dialog::backdrop { background: var(--backdrop); }
-.dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-.dialog-heading h2 { font-size: 24px; }
-.dialog-close { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: var(--line) solid var(--ink); border-radius: 14px; background: var(--surface-muted); color: var(--text); box-shadow: 0 3px 0 var(--ink); font-size: 24px; font-weight: 700; line-height: 1; cursor: pointer; transition: background-color 160ms ease, transform 90ms ease, box-shadow 90ms ease; }
-#confirm-description { color: var(--muted); font-size: 17px; line-height: 1.8; }
-.confirm-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; padding-bottom: 5px; }
-.confirm-actions button { flex: 1 1 150px; }
+.dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.dialog-heading h2 { font-size: var(--text-xl); }
+.dialog-close { display: grid; place-items: center; flex: 0 0 var(--control-h-sm); width: var(--control-h-sm); height: var(--control-h-sm); padding: 0; border: var(--line) solid var(--ink); border-radius: var(--radius-small); background: var(--surface-muted); color: var(--text); box-shadow: var(--shadow-small); font-size: var(--text-xl); font-weight: 700; line-height: 1; cursor: pointer; transition: background-color 160ms ease, transform 90ms ease, box-shadow 90ms ease; }
+#confirm-description { color: var(--muted); font-size: var(--text-base); }
+/* Side by side on every phone; each button is at least as wide as its own word. */
+.confirm-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-5); padding-bottom: var(--space-1); }
+.confirm-actions button { flex: 1 1 8em; }
 .primary.danger { background: var(--error-fill); color: var(--on-fill); }
 @media (hover: hover) { .primary.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--error-fill) 85%, #fff); } }
 /* Quitting is set apart from the settings above it and reads as destructive. */
-.menu-item.menu-danger { margin-top: 14px; color: var(--error); }
+.menu-item.menu-danger { margin-top: var(--space-4); color: var(--error); }
 @media (hover: hover) { .menu-item.menu-danger:hover { background: var(--error-bg); } }
-.rules-list { display: grid; gap: 14px; margin: 4px 0 0; padding: 0; list-style: none; counter-reset: rule; font-size: 16px; line-height: 1.8; }
-.rules-list li { position: relative; padding-inline-start: 44px; counter-increment: rule; }
-.rules-list li::before { content: counter(rule); position: absolute; inset-inline-start: 0; top: 0; display: grid; place-items: center; width: 32px; height: 32px; padding-top: 2px; border: 2px solid var(--ink); border-radius: 50%; background: var(--surface-muted); color: var(--text); font-family: var(--font-display); font-size: 16px; font-weight: 800; line-height: 1; }
+.rules-list { display: grid; gap: var(--space-4); margin: 0; padding: 0; list-style: none; counter-reset: rule; font-size: var(--text-base); }
+.rules-list li { position: relative; min-height: var(--badge-sm); padding-inline-start: calc(var(--badge-sm) + var(--space-3)); counter-increment: rule; }
+/* The number sits on the first line: its middle meets the middle of that line. */
+.rules-list li::before { content: counter(rule); position: absolute; inset-inline-start: 0; top: 0; top: calc((1lh - var(--badge-sm)) / 2); display: grid; place-items: center; width: var(--badge-sm); height: var(--badge-sm); padding-top: var(--nudge); border: var(--line-thin) solid var(--ink); border-radius: 50%; background: var(--surface-muted); color: var(--text); font-family: var(--font-display); font-size: var(--text-badge); font-weight: 800; line-height: 1; }
 #rename-form label { color: var(--text); font-weight: 500; }
 /* The dialog keeps one line for its message, so a rejected name never resizes it. */
-#rename-form :is(.error, .helper-message) { display: block; min-height: 26px; }
+#rename-form :is(.error, .helper-message) { display: block; min-height: 1.6em; }
 #rename-form .sr-only { min-height: 0; }
 /* Saving the same taken name again: the dialog shakes instead of closing. */
 #rename-dialog.is-shaking { animation: shake 380ms ease; }
-.settings-dialog form { padding-bottom: 5px; }
+.settings-dialog form { padding-bottom: var(--space-1); }
 /* Becoming the host is news, so this dialog is louder than the others: the title is a tilted
    pop-colored sticker (the hero's language) and everything sits centered under it. */
-#host-dialog { width: min(400px, calc(100% - 32px)); padding: var(--space-6) var(--space-5) var(--space-5); text-align: center; }
+#host-dialog { width: min(380px, calc(100% - 2 * var(--space-4))); padding: var(--space-6) var(--space-5) var(--space-5); text-align: center; }
 #host-dialog .dialog-heading { justify-content: center; margin-bottom: var(--space-5); }
-#host-dialog h2 { display: inline-block; padding: 6px 22px 2px; border: var(--line) solid var(--ink); border-radius: var(--shape-control); background: var(--pop); color: var(--pop-text); box-shadow: var(--shadow-small); font-size: 28px; line-height: 1.3; rotate: -3deg; }
-#host-dialog p { color: var(--muted); font-size: 17px; line-height: 1.8; }
+#host-dialog h2 { display: inline-block; padding: calc(var(--space-1) + var(--nudge)) var(--space-5) var(--space-1); border: var(--line) solid var(--ink); border-radius: var(--shape-control); background: var(--pop); color: var(--pop-text); box-shadow: var(--shadow-small); font-size: var(--text-2xl); rotate: -3deg; }
+#host-dialog p { max-width: 32ch; margin-inline: auto; color: var(--muted); font-size: var(--text-base); }
 #host-dialog p:empty { display: none; }
 #host-dialog .primary { margin-top: var(--space-5); }
 
@@ -782,33 +1030,33 @@ button:disabled { cursor: not-allowed; }
    three sit in one card, split by the same dashed rule as the home "أو". */
 .features { display: none; width: 100%; max-width: 560px; margin: 0 auto; padding: var(--space-4) var(--gutter-right) var(--space-8) var(--gutter-left); }
 body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: block; }
-.features-list { display: grid; gap: var(--space-5); margin: 0; padding: 0; list-style: none; }
+.features-list { display: grid; gap: var(--stack-gap); margin: 0; padding: 0; list-style: none; }
 .feature {
     display: grid;
-    grid-template-columns: 52px minmax(0, 1fr);
+    grid-template-columns: var(--icon-tile) minmax(0, 1fr);
     grid-template-areas: "icon title" "text text";
     align-items: center;
-    gap: var(--space-4);
-    padding: var(--card-pad);
+    gap: var(--space-3) var(--space-4);
+    padding: var(--panel-pad-top) var(--panel-pad) var(--panel-pad);
     border: var(--line) solid var(--ink);
     border-radius: var(--shape-panel);
     background: var(--surface);
     box-shadow: var(--shadow);
 }
-.feature-icon { grid-area: icon; display: grid; place-items: center; width: 52px; height: 52px; border: var(--line) solid var(--ink); border-radius: 16px 16px 4px 16px; background: var(--candy-yellow); color: var(--on-fill); box-shadow: 0 3px 0 var(--ink); rotate: -4deg; }
+.feature-icon { grid-area: icon; display: grid; place-items: center; width: var(--icon-tile); height: var(--icon-tile); border: var(--line) solid var(--ink); border-radius: var(--shape-control); background: var(--candy-yellow); color: var(--on-fill); box-shadow: var(--shadow-small); rotate: -4deg; }
 .feature:nth-child(2) .feature-icon { background: var(--candy-blue); rotate: 3deg; }
 .feature:nth-child(3) .feature-icon { background: var(--candy-mint); rotate: -2deg; }
-.feature-icon svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.feature h2 { grid-area: title; padding-top: var(--space-1); font-size: 21px; line-height: 1.35; }
-.feature p { grid-area: text; max-width: 42ch; color: var(--muted); font-size: 16px; line-height: 1.75; }
+.feature-icon svg { width: 50%; height: 50%; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.feature h2 { grid-area: title; font-size: var(--text-lg); }
+.feature p { grid-area: text; max-width: 42ch; color: var(--muted); font-size: var(--text-base); }
 @media (min-width: 900px) {
-    .features { max-width: 1040px; padding: var(--space-4) 32px var(--space-8); }
-    .features-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: var(--space-6) 0; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); box-shadow: var(--shadow); }
+    .features { max-width: var(--page-max); padding: var(--space-4) var(--space-6) var(--space-9); }
+    .features-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; padding: var(--panel-pad) 0; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); box-shadow: var(--shadow); }
     /* Each column: badge on top, then the title and its line. */
-    .feature { grid-template-columns: minmax(0, 1fr); grid-template-areas: "icon" "title" "text"; align-content: start; justify-items: start; gap: 0; padding: var(--space-1) var(--space-6); border: 0; border-radius: 0; background: none; box-shadow: none; }
+    .feature { grid-template-columns: minmax(0, 1fr); grid-template-areas: "icon" "title" "text"; align-content: start; justify-items: start; gap: 0; padding: var(--space-2) var(--panel-pad); border: 0; border-radius: 0; background: none; box-shadow: none; }
     .feature-icon { margin-bottom: var(--space-4); }
     .feature p { margin-top: var(--space-1); }
-    .feature + .feature { border-inline-start: 2px dashed var(--border); }
+    .feature + .feature { border-inline-start: var(--line-thin) dashed var(--border); }
 }
 
 /* ---------- Scroll reveal ----------
@@ -832,27 +1080,27 @@ body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: bloc
 }
 
 /* ---------- Footer & overlays ---------- */
-.site-footer { flex-shrink: 0; padding: var(--space-5) var(--space-4) max(var(--space-6), env(safe-area-inset-bottom, 0px)); color: var(--page-muted); font-size: 13px; font-weight: 400; text-align: center; }
+.site-footer { flex-shrink: 0; padding: var(--space-4) var(--space-4) max(var(--space-5), env(safe-area-inset-bottom, 0px)); color: var(--page-muted); font-size: var(--text-xs); font-weight: 400; text-align: center; }
 .connection-overlay {
     position: fixed; inset: 0; z-index: 10000;
-    display: grid; place-items: center; padding: 24px;
+    display: grid; place-items: center; padding: var(--space-5);
     background: color-mix(in srgb, var(--background) 78%, transparent);
     -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
     touch-action: none;
 }
 .connection-overlay.hidden { display: none; }
-.connection-card { max-width: 340px; padding: 28px; border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); box-shadow: var(--shadow-raised); text-align: center; color: var(--text); }
-.connection-card p { margin: 14px 0 0; font-size: 17px; font-weight: 500; }
+.connection-card { max-width: 340px; padding: var(--space-6) var(--space-5) var(--space-5); border: var(--line) solid var(--ink); border-radius: var(--shape-panel); background: var(--surface); box-shadow: var(--shadow-raised); text-align: center; color: var(--text); }
+.connection-card p { margin: var(--space-3) 0 0; font-size: var(--text-md); font-weight: 500; }
 .connection-card p:focus { outline: none; }
-.connection-card .primary { margin-top: 18px; }
-.connection-loader { display: inline-block; width: 34px; height: 34px; border: 5px solid var(--surface-muted); border-top-color: var(--pop); border-right-color: var(--ink); border-radius: 50%; animation: connection-spin 800ms linear infinite; }
+.connection-card .primary { margin-top: var(--space-4); }
+.connection-loader { display: inline-block; width: var(--badge-md); height: var(--badge-md); border: var(--line-thick) solid var(--surface-muted); border-top-color: var(--pop); border-right-color: var(--ink); border-radius: 50%; animation: connection-spin 800ms linear infinite; }
 @keyframes connection-spin { to { transform: rotate(360deg); } }
 .host-notice {
-    position: fixed; bottom: max(96px, calc(env(safe-area-inset-bottom) + 96px)); left: 50%; transform: translateX(-50%);
-    z-index: 1000; width: max-content; max-width: calc(100% - 32px); padding: 12px 20px 10px;
+    position: fixed; bottom: calc(env(safe-area-inset-bottom, 0px) + var(--toast-offset)); left: 50%; transform: translateX(-50%);
+    z-index: 1000; width: max-content; max-width: min(440px, calc(100% - 2 * var(--space-4))); padding: var(--space-3) var(--space-4) var(--space-2);
     border: var(--line) solid var(--ink); border-radius: var(--shape-control);
     background: var(--pop); color: var(--pop-text);
-    box-shadow: 0 5px 0 var(--ink); font-size: 15px; font-weight: 500; text-align: center;
+    box-shadow: var(--shadow-small); font-size: var(--text-sm); font-weight: 500; text-align: center;
     animation: toast-in 420ms var(--ease-bounce);
 }
 
@@ -873,6 +1121,9 @@ body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: bloc
     :is(.primary, .secondary, .menu-toggle, .dialog-close, .choice, .brand):active:not(:disabled) { transform: none; }
     /* A toast still needs its time on screen; it just appears and leaves without moving. */
     :is(#site-error, #copy-message, #lobby-error, #home-error:not(.sr-only), .admin-message) { animation-name: toast-still; animation-duration: 4600ms !important; }
+    /* Answer notifications appear in place (no slide) and still leave a few seconds after the close. */
+    .answer-toast.is-new { animation-name: none; }
+    .answer-toasts[data-phase="review"] .answer-toast { animation-name: toast-still; }
 }
 @media (prefers-reduced-transparency: reduce) {
     .connection-overlay { background: var(--background); -webkit-backdrop-filter: none; backdrop-filter: none; }
@@ -881,62 +1132,63 @@ body:has(:is(#name-screen, #home-screen):not(.hidden)) .features { display: bloc
 
 /* ---------- Responsive ---------- */
 @media (min-width: 620px) {
-    :root { --panel-pad: 28px; --card-pad: var(--space-6); }
+    :root { --panel-pad: var(--space-5); --stack-gap: var(--space-6); }
     .choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 900px) {
-    :root { --panel-pad: 32px; --header-height: 66px; --section-gap: clamp(var(--space-7), 7vh, var(--space-8)); }
-    body { font-size: 17px; }
-    .header-inner { padding-inline: max(32px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-left, 0px)); }
-    .brand { font-size: 24px; }
-    .container { padding: 48px 32px 48px; }
-    .container:has(#game-screen:not(.hidden)) { padding-top: 32px; }
-    .container:has(:is(#name-screen, #home-screen):not(.hidden)) { max-width: 600px; padding: var(--space-7) 32px var(--space-9); }
-    .screen-heading { margin-bottom: 36px; }
-    .screen-heading h1 { font-size: 56px; }
-    .screen-heading p { font-size: 20px; }
-    .question { font-size: 36px; margin: 26px 0 30px; }
-    .choice { min-height: 74px; font-size: 20px; }
+    :root { --panel-pad: 28px; --header-height: 66px; --section-gap: clamp(var(--space-7), 7vh, var(--space-8)); --game-gap: var(--space-5); --container-pad: var(--space-6); }
+    .header-inner { padding-inline: max(var(--space-6), env(safe-area-inset-right, 0px)) max(var(--space-6), env(safe-area-inset-left, 0px)); }
+    .container { padding: var(--space-7) var(--space-6) var(--space-7); }
+    .container:has(:is(#name-screen, #home-screen):not(.hidden)) {
+        max-width: 600px;
+        min-height: calc(100vh - var(--header-height) - var(--line));
+        min-height: calc(100svh - var(--header-height) - var(--line) - env(safe-area-inset-top, 0px));
+        padding: var(--space-7) var(--space-6) var(--space-9);
+    }
+    .screen-heading { margin-bottom: var(--space-6); }
+    .question { margin-block: var(--space-5); }
     .backdrop span:nth-child(1) { right: 6%; }
     .backdrop span:nth-child(2) { left: 5%; }
 }
 @media (max-width: 359px) {
-    :root { --panel-pad: 16px; }
-    .container { padding-inline: 12px; padding-top: 22px; }
-    .primary, .secondary { padding-inline: 14px; font-size: 17px; }
-    .choice { min-height: 56px; font-size: 16px; }
-    .action-bar { margin-inline: -12px; padding-inline: 12px; }
-    .result-row { padding: 8px 10px; gap: 8px; }
-    .settings-dialog { padding: 18px; }
-    .hero-mark { padding-inline: 20px; }
+    :root { --panel-pad: var(--space-4); --container-pad: var(--space-3); }
+    .container { padding-inline: var(--space-3); }
+    .primary, .secondary { padding-inline: var(--space-4); }
+    .result-row { padding: var(--space-2) var(--space-3); gap: var(--space-2); }
+    .settings-dialog { padding: var(--space-4); }
     /* Entry screens keep their 16px gutters even on the narrowest phones. */
     .container:has(:is(#name-screen, #home-screen):not(.hidden)) { padding-right: var(--gutter-right); padding-left: var(--gutter-left); }
-    :root { --card-pad: 20px; }
-    .feature { grid-template-columns: 44px minmax(0, 1fr); gap: var(--space-3); }
-    .feature-icon { width: 44px; height: 44px; }
-    .feature-icon svg { width: 22px; height: 22px; }
 }
-/* Phones turned sideways: question on one side, choices on the other, all in one screen. */
+/* Phones turned sideways: question (and picture) on one side, choices on the other, all in one screen.
+   The picture's row is the flexible one here. */
 @media (orientation: landscape) and (max-height: 520px) {
-    :root { --header-height: 50px; --panel-pad: 18px; }
-    .brand { min-height: 38px; font-size: 19px; }
-    .menu-toggle { flex-basis: 38px; width: 38px; height: 38px; }
-    .container:has(#game-screen:not(.hidden)) { max-width: 980px; padding-top: 10px; }
+    :root {
+        --header-height: 50px; --game-gap: var(--space-2);
+        --game-bar: calc(var(--control-h-sm) + 2 * var(--space-2) + 2 * var(--line));
+        --choice-h: 44px; --choice-gap: var(--space-2); --choice-letter: 28px; --timer-h: 34px; --image-min: 48px;
+        --text-q-short: 22px; --text-q-medium: 20px; --text-q-long: 18px; --text-q-very-long: 16.5px; --text-choice: 16px;
+    }
+    /* Header buttons keep their 44px; the bar trims its own padding instead. */
+    .header-inner { padding-block: calc((var(--header-height) - var(--control-h-sm)) / 2); }
+    .brand { font-size: var(--text-lg); }
+    .container:has(#game-screen:not(.hidden)) { max-width: 980px; }
+    /* Only the game card trims its padding; the other screens keep their rhythm. */
+    #game-screen { --panel-pad: var(--space-4); }
     .question-panel {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        grid-template-areas: "top top" "question choices" "image choices" "message message";
-        grid-template-rows: auto auto 1fr auto;
-        column-gap: 22px;
-        padding-bottom: 14px;
+        grid-template-areas: "top top" "question choices" "image choices" "message choices";
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        column-gap: var(--space-5);
+        padding-bottom: var(--space-3);
     }
-    .game-top { grid-area: top; padding-block: 8px; }
-    .timer { height: 38px; font-size: 20px; }
-    .timer-track { height: 10px; }
-    .question { grid-area: question; margin: 10px 0; font-size: 21px; }
-    .question-image { grid-area: image; max-height: 44vh; margin: 0; }
-    .choices { grid-area: choices; grid-template-columns: minmax(0, 1fr); align-self: center; gap: 10px; padding-top: 10px; }
-    .choice { min-height: 46px; padding: 4px 10px; font-size: 16px; box-shadow: 0 3px 0 var(--ink); }
-    .choice-letter { flex-basis: 30px; width: 30px; height: 30px; font-size: 15px; }
-    .answer-message { grid-area: message; margin-top: 8px; }
+    :root { --track-h: 10px; --game-top-start: var(--space-2); --game-top-end: var(--space-1); }
+    .game-top { grid-area: top; gap: var(--space-1) var(--space-4); }
+    .question { grid-area: question; margin-block: var(--space-2); }
+    .question-image { grid-area: image; justify-self: center; height: 100%; max-height: none; margin: 0 0 var(--space-1); }
+    .choices { grid-area: choices; grid-template-columns: minmax(0, 1fr); align-self: center; padding-top: var(--space-2); }
+    .choice { padding-block: var(--space-1); }
+    .answer-message { grid-area: message; margin-top: var(--space-2); font-size: var(--text-sm); }
+    .game-actions #next-question-button { min-height: var(--control-h-sm); }
+    .answer-toasts { width: 56%; }
 }

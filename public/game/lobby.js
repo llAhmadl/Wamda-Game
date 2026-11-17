@@ -95,6 +95,8 @@ function renderPlayers(container, players, hostId) {
         row.className = player.connected === false ? "player is-away" : "player";
         const name = document.createElement("span");
         name.className = "player-name";
+        // Its own direction, so a long Latin name ends in an ellipsis at its own end.
+        name.setAttribute("dir", "auto");
         name.textContent = player.name;
         row.appendChild(name);
         if (player.id === hostId) {

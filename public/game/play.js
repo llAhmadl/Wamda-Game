@@ -1,15 +1,27 @@
-// Play: questions, answers, the live "first correct" board and the timer.
+// Play: questions, answers, the "first correct" notifications and the timer.
 let answerLimit = 1;
 let displayedWinnerCount = 0;
 let answerLeadersSignature = null;
 let answerBoardKey = null;
+// Winner ids already shown as notifications for this question, in place order.
+let shownWinners = [];
 let lastTick = null;
 // The last questionClosed data, and a refused answer's note, for the current question only.
 let lastReview = null;
 let refusedNote = "";
 const questionImage = el("question-image");
+const questionText = el("question-text");
+const answerToasts = el("answer-leaders");
 
 function setTimerState(state) { timerElement.parentElement.dataset.state = state; }
+
+// Length buckets for the question text (style.css picks the size). Thresholds are in characters.
+function lengthBucket(text) {
+    const length = Array.from(text).length;
+    return length <= 45 ? "short" : length <= 90 ? "medium" : length <= 140 ? "long" : "very-long";
+}
+// Four short choices sit two by two on phones.
+const COMPACT_CHOICE = 14;
 
 function renderQuestion(data) {
     gameId = data.gameId;
@@ -22,7 +34,11 @@ function renderQuestion(data) {
         answerBoardKey = boardKey;
         displayedWinnerCount = 0;
         answerLeadersSignature = null;
+        shownWinners = [];
+        answerToasts.innerHTML = "";
     }
+    answerToasts.dataset.phase = "question";
+    // Winners in a question payload come from a snapshot (reconnect, wake): shown without motion.
     renderAnswerLeaders(data.winners || []);
     updateControls();
     showScreen("game");
@@ -31,7 +47,8 @@ function renderQuestion(data) {
     lastReview = null;
     refusedNote = "";
     el("question-number").textContent = `الجولة ${["الأولى", "الثانية"][data.round - 1] || data.round} | سؤال ${data.number}`;
-    el("question-text").textContent = data.question;
+    questionText.textContent = data.question;
+    questionText.dataset.length = lengthBucket(data.question);
     if (data.image) { questionImage.src = data.image; questionImage.classList.remove("hidden"); }
     else { questionImage.removeAttribute("src"); questionImage.classList.add("hidden"); }
     choicesContainer.innerHTML = "";
@@ -51,8 +68,10 @@ function renderQuestion(data) {
         button.addEventListener("click", () => submitAnswer(index, button));
         choicesContainer.appendChild(button);
     });
+    choicesContainer.dataset.compact = String(data.choices.length === 4 && data.choices.every(choice => Array.from(choice).length <= COMPACT_CHOICE));
     setTimerState("open");
     startTimer(data);
+    fitQuestion();
 }
 socket.on("question", data => { renderQuestion(data); flashQuestion(); });
 // The one signature moment: a brief light sweep across the card as a live question arrives.
@@ -63,39 +82,112 @@ function flashQuestion() {
     questionPanel.classList.add("is-flashing");
 }
 
-// Each update replaces the server-owned order; retries never append extra rows.
-// The first place wears a crown; every other winning place has its own color.
-function renderAnswerLeaders(winners) {
+// The question must fit the phone screen; style.css does the work (the picture gives way first).
+// When even that cannot fit, step down once ("tight"); in review the picture may then go ("squeeze");
+// only after that does the page scroll ("free") rather than clip a choice.
+// Runs after each render, when a picture loads and when the screen resizes.
+function fitQuestion() {
+    if (typeof questionPanel.scrollHeight !== "number" || screens.game.classList.contains("hidden")) return;
+    delete questionPanel.dataset.fit;
+    for (const step of phase === "review" ? ["tight", "squeeze", "free"] : ["tight", "free"]) {
+        if (questionPanel.scrollHeight <= questionPanel.clientHeight + 1) break;
+        questionPanel.dataset.fit = step;
+    }
+    placeToasts();
+}
+let fitFrame = null;
+function scheduleFit() {
+    if (fitFrame !== null || typeof window.requestAnimationFrame !== "function") return;
+    fitFrame = window.requestAnimationFrame(() => { fitFrame = null; fitQuestion(); });
+}
+questionImage.addEventListener("load", scheduleFit);
+window.addEventListener("resize", scheduleFit);
+
+// "First correct" notifications: one small line per scoring place, sliding in from the left edge of
+// the screen, the newest under the previous. The server owns the order and it only grows, so each
+// update appends the new places only; retries and reconnect snapshots never repeat one. Snapshot
+// winners (live = false) appear without motion.
+const PLACE_WORDS = ["أول", "ثاني", "ثالث", "رابع", "خامس", "سادس", "سابع"];
+const PLACE_MEDALS = ["🥇", "🥈", "🥉"];
+function answerToastText(winner, index) {
+    const me = winner.id === playerId;
+    const place = `${PLACE_WORDS[index]} واحد`;
+    return { name: me ? "أنت" : `\u2068${winner.name}\u2069`, rest: index === 0 ? ` ${me ? "جاوبت" : "جاوب"} ${place}` : ` ${place}` };
+}
+function answerToast(winner, index, live) {
+    const item = document.createElement("li");
+    item.className = `answer-toast place-${index + 1}`;
+    if (winner.id === playerId) item.classList.add("is-me");
+    if (live) item.classList.add("is-new");
+    const name = document.createElement("span");
+    name.className = "answer-toast-name";
+    name.setAttribute("dir", "auto");
+    const rest = document.createElement("span");
+    rest.className = "answer-toast-rest";
+    const words = answerToastText(winner, index);
+    name.textContent = words.name;
+    rest.textContent = words.rest + (PLACE_MEDALS[index] ? ` ${PLACE_MEDALS[index]}` : "");
+    item.appendChild(name);
+    item.appendChild(rest);
+    return item;
+}
+// They sit over the least useful part of the screen and never over a choice: under the timer row
+// down to the first choice (phones upright), under the choices (phones sideways), the empty margin
+// (wide screens). Only as many of the newest as fit there (three at most) are shown; the older ones step aside.
+const toastStack = window.matchMedia?.("(orientation: landscape) and (max-height: 520px)");
+const toastMargin = window.matchMedia?.("(min-width: 1100px)");
+function placeToasts() {
+    const items = Array.from(answerToasts.children);
+    if (!items.length || typeof window.innerHeight !== "number" || typeof choicesContainer.getBoundingClientRect !== "function") return;
+    items.forEach(item => item.classList.remove("is-past"));
+    if (toastMargin?.matches) return;
+    const step = (items[0].offsetHeight || 24) + 4;
+    const choices = choicesContainer.getBoundingClientRect();
+    let room;
+    if (toastStack?.matches) {
+        // Sideways: under the choices, and above the host's bar when it is showing.
+        const floor = nextQuestionButton.classList.contains("hidden") ? window.innerHeight
+            : Math.min(window.innerHeight, nextQuestionButton.parentElement.getBoundingClientRect().top);
+        answerToasts.style.setProperty("--toast-bottom", `${Math.round(window.innerHeight - floor + 4)}px`);
+        room = floor - choices.bottom - 8;
+    } else {
+        const top = el("timer-bar").parentElement.getBoundingClientRect().bottom + 6;
+        answerToasts.style.setProperty("--toast-top", `${Math.round(top)}px`);
+        room = choices.top - 6 - top;
+    }
+    // Never more than three at once on a phone, so the question stays readable.
+    const shown = Math.min(3, Math.max(1, Math.floor((room + 4) / step)));
+    items.forEach((item, index) => item.classList.toggle("is-past", index < items.length - shown));
+}
+window.addEventListener("resize", () => { if (answerToasts.children.length) placeToasts(); });
+function renderAnswerLeaders(winners, live = false) {
     if (!Array.isArray(winners) || winners.length < displayedWinnerCount) return;
     const accepted = winners.slice(0, answerLimit);
     const signature = JSON.stringify([answerLimit, accepted.map(winner => [winner.id, winner.name])]);
     if (signature === answerLeadersSignature) return;
     answerLeadersSignature = signature;
     displayedWinnerCount = accepted.length;
-    const list = el("answer-leaders");
-    list.innerHTML = "";
-    for (let index = 0; index < answerLimit; index++) {
-        const winner = accepted[index];
-        const row = document.createElement("li");
-        row.className = winner ? `answer-leader is-filled place-${index + 1}` : "answer-leader";
-        if (winner?.id === playerId) row.classList.add("is-me");
-        const rank = document.createElement("span");
-        rank.className = "answer-rank";
-        rank.textContent = String(index + 1);
-        rank.setAttribute("aria-hidden", "true");
-        if (winner && index === 0) { const crown = crownIcon(); if (crown) rank.appendChild(crown); }
-        const name = document.createElement("bdi");
-        name.className = "answer-player";
-        name.textContent = winner ? winner.name : "—";
-        if (!winner) row.setAttribute("aria-label", `المركز ${index + 1}، بانتظار إجابة صحيحة`);
-        row.appendChild(rank);
-        row.appendChild(name);
-        list.appendChild(row);
+    // A changed order is never expected from the server; if it happens, redraw quietly.
+    if (!shownWinners.every((id, index) => accepted[index]?.id === id)) {
+        answerToasts.innerHTML = "";
+        shownWinners = [];
+        live = false;
     }
+    accepted.forEach((winner, index) => {
+        if (index < shownWinners.length) {
+            // Same place, same player: only a rename can change it, and that never animates.
+            const name = answerToasts.children[index]?.querySelector(".answer-toast-name");
+            if (name) name.textContent = answerToastText(winner, index).name;
+            return;
+        }
+        answerToasts.appendChild(answerToast(winner, index, live));
+        shownWinners.push(winner.id);
+    });
+    placeToasts();
 }
 socket.on("answerProgress", data => {
     if (data.gameId !== gameId || data.questionId !== questionId || !["question", "review"].includes(phase)) return;
-    renderAnswerLeaders(data.winners);
+    renderAnswerLeaders(data.winners, true);
 });
 
 function submitAnswer(answerIndex, selectedButton) {
@@ -144,12 +236,14 @@ function renderAnswer(data) {
 socket.on("answerResult", data => { renderAnswer(data); sound.play(data.correct ? "correct" : "wrong"); });
 
 // Question review: wait for an explicit host action.
-function renderReview(data) {
+function renderReview(data, live = false) {
     clearInterval(countdown);
     phase = "review";
     lastInRound = data.lastInRound;
     setTimerState("closed");
-    renderAnswerLeaders(data.winners || (data.winner ? [data.winner] : []));
+    renderAnswerLeaders(data.winners || (data.winner ? [data.winner] : []), live);
+    // The notifications fade a few seconds after the close (style.css).
+    answerToasts.dataset.phase = "review";
     const buttons = choicesContainer.querySelectorAll("button");
     buttons.forEach((button, index) => {
         button.disabled = true;
@@ -161,6 +255,7 @@ function renderReview(data) {
     lastReview = data;
     answerMessage.textContent = refusedNote ? refusedText(data) : reviewText(data);
     updateControls();
+    fitQuestion();
 }
 // "+1" is wrapped in a left-to-right isolate so RTL text never shows it as "1+".
 // With no winner the correct choice is named, first-strong isolated for mixed scripts.
@@ -179,7 +274,7 @@ function correctChoiceText(data) {
 }
 // The fastest correct answer gets a confetti burst on their own screen.
 socket.on("questionClosed", data => {
-    renderReview(data);
+    renderReview(data, true);
     preloadImage(data.nextImage);
     if ((data.winners?.[0] || data.winner)?.id === playerId) celebrate();
 });
@@ -209,7 +304,7 @@ function startTimer(data) {
         if (remaining === 0) {
             clearInterval(countdown);
             choicesContainer.querySelectorAll("button").forEach(button => { button.disabled = true; });
-            if (!choicesContainer.querySelector(".selected")) answerMessage.textContent = "انتهى الوقت. بانتظار المضيف للمتابعة.";
+            if (!choicesContainer.querySelector(".selected")) { answerMessage.textContent = "انتهى الوقت. بانتظار المضيف للمتابعة."; fitQuestion(); }
         }
     }
     countdown = setInterval(paint, 200);

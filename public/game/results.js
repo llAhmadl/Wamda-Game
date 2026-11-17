@@ -46,6 +46,7 @@ function renderRanking(ranking, animateScores, from = null, celebrateEnd = false
         const position = document.createElement("span");
         position.className = "position";
         const name = document.createElement("span");
+        name.setAttribute("dir", "auto");
         name.textContent = player.name;
         const score = document.createElement("span");
         score.className = "result-score";

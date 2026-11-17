@@ -129,22 +129,19 @@
 
         <section id="game-screen" class="screen hidden" aria-labelledby="question-text">
             <div id="question-panel" class="panel question-panel">
-                <!-- Sticks under the header so the timer stays visible on short screens. -->
+                <!-- Sticks under the header if the page ever has to scroll. -->
                 <div class="game-top">
                     <span id="question-number">السؤال</span>
                     <span class="timer" role="timer" aria-label="الثواني المتبقية"><span id="timer">20</span></span>
                     <div class="timer-track" aria-hidden="true"><span id="timer-bar"></span></div>
+                    <!-- "First correct" notifications (play.js): they float under the timer row, never moving the layout. -->
+                    <ol id="answer-leaders" class="answer-toasts" aria-live="polite" aria-label="أول الإجابات الصحيحة"></ol>
                 </div>
                 <h1 id="question-text" class="question" tabindex="-1">السؤال</h1>
                 <img id="question-image" class="question-image hidden" alt="صورة السؤال" decoding="async">
                 <div id="choices" class="choices" role="group" aria-label="خيارات الإجابة"></div>
                 <p id="answer-message" class="answer-message" role="status"></p>
             </div>
-            <section class="answer-board" aria-labelledby="answer-board-title">
-                <h2 id="answer-board-title">أول ناس يجاوبون</h2>
-                <p>الإجابات الصحيحة · نقطة لكل لاعب</p>
-                <ol id="answer-leaders" aria-live="polite" aria-atomic="true"></ol>
-            </section>
             <div class="game-actions action-bar">
                 <p id="advance-message" class="helper-message" role="status"></p>
                 <button id="next-question-button" class="primary full-width hidden" type="button">السؤال التالي</button>

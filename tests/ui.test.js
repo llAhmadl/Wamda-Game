@@ -281,9 +281,18 @@ test("static UI contracts: local fonts, reduced motion, and touch-friendly sizin
     assert.match(css, /\.choice\.is-wrong \.choice-letter/);
     assert.ok(!/https?:\/\//.test(html + css));
     assert.match(html, /width=device-width/);
-    assert.match(css, /min-height: 52px/);
-    assert.match(css, /min-height: 44px/);
-    assert.match(css, /font-size: 16px/);
+    // Sizes come from one scale on :root: main buttons 48px on phones up to 52px, nothing tappable under 44px.
+    assert.match(css, /--control-h: clamp\(48px, [^;]+, 52px\);/);
+    assert.match(css, /--control-h-sm: 44px;/);
+    assert.match(css, /\.primary, \.secondary, \.text-button \{[^}]*min-height: var\(--control-h\)/);
+    // Inputs stay at 16px or more so iOS never zooms; read text never goes under 16px, small text under 12px.
+    assert.match(css, /input, select, textarea \{[^}]*font-size: var\(--text-md\)/);
+    const floors = Object.fromEntries([...css.matchAll(/--(text-[\w-]+): clamp\((\d+(?:\.\d+)?)px/g)].map(match => [match[1], Number(match[2])]));
+    for (const token of ["text-base", "text-md", "text-choice", "text-q-short", "text-q-medium", "text-q-long", "text-q-very-long"]) assert.ok(floors[token] >= 16, token);
+    assert.ok(Object.values(floors).every(size => size >= 12));
+    // The question view is sized to the small viewport, with a fallback.
+    assert.match(css, /--viewport-h: 100vh;/);
+    assert.match(css, /@supports \(height: 100svh\) \{ :root \{ --viewport-h: 100svh;/);
     assert.match(css, /prefers-reduced-motion|No animation/i);
     assert.match(css, /grid-template-columns: minmax\(0, 1fr\)/);
 });
@@ -790,55 +799,118 @@ test("final results count up from round-one scores so overtakes animate", () => 
 });
 
 
-test("live answer board follows server order, handles duplicates and stale events, and clears for each question", () => {
+// The in-game "first correct" notifications (#answer-leaders): one small line per scoring place.
+const toastName = row => row.querySelector(".answer-toast-name").textContent;
+const toastText = row => row.textContent;
+
+test("answer notifications follow server order, ignore duplicates and stale events, and clear for each question", () => {
     const ui = setup();
     const state = recoveryState();
     state.scoringMode = 3;
     state.question.scoringMode = 3;
     restore(ui, state);
     const list = ui.el("answer-leaders");
-    assert.equal(list.children.length, 3);
-    assert.deepEqual(list.children.map(row => row.children[1].textContent), ["—", "—", "—"]);
+    assert.equal(list.getAttribute("aria-live"), "polite", "New places are announced");
+    assert.equal(list.children.length, 0, "No empty placeholders: only answers that happened");
     const first = { id: "guest", name: "سوسن", rank: 1, awardedPoints: 1 };
     const data = { gameId: state.gameId, questionId: 6, scoringMode: 3, winners: [first] };
     ui.socket.receive("answerProgress", data);
+    assert.equal(list.children.length, 1);
     const firstRow = list.children[0];
+    assert.ok(firstRow.classList.contains("is-new"), "A live answer slides in");
+    assert.equal(toastName(firstRow), "\u2068سوسن\u2069", "Names are isolated so mixed scripts never reorder the line");
+    assert.equal(toastText(firstRow), "\u2068سوسن\u2069 جاوب أول واحد 🥇", "Just the words: name, place and medal");
+    assert.equal(firstRow.querySelector(".answer-toast-name").getAttribute("dir"), "auto");
     ui.socket.receive("answerProgress", data);
-    assert.equal(list.children[0], firstRow, "Repeated snapshots must not trigger another live announcement");
-    assert.deepEqual(list.children.map(row => row.children[1].textContent), ["سوسن", "—", "—"]);
-    assert.equal(list.children.filter(row => row.classList.contains("is-filled")).length, 1);
+    assert.equal(list.children.length, 1, "A repeated update never shows the same place twice");
+    assert.equal(list.children[0], firstRow);
     ui.socket.receive("answerProgress", { ...data, winners: [] });
     ui.socket.receive("answerProgress", { ...data, gameId: "old", winners: [] });
-    ui.socket.receive("answerProgress", { ...data, questionId: 5, winners: [] });
-    assert.equal(list.children[0].children[1].textContent, "سوسن");
+    ui.socket.receive("answerProgress", { ...data, questionId: 5, winners: [first, { id: "x", name: "قديم" }] });
+    assert.equal(list.children.length, 1, "Shorter and stale updates are ignored");
     const unsafeName = "<img src=x onerror=alert(1)>";
-    ui.socket.receive("answerProgress", { ...data, winners: [first, { id: "host", name: unsafeName, rank: 2, awardedPoints: 1 }] });
-    assert.equal(list.children[1].children[1].textContent, unsafeName);
-    assert.equal(list.children[1].children[1].children.length, 0);
+    ui.socket.receive("answerProgress", { ...data, winners: [first, { id: "c", name: unsafeName, rank: 2, awardedPoints: 1 }] });
+    assert.equal(list.children.length, 2);
+    assert.equal(list.children[0], firstRow, "Earlier places stay put; only the new one is added");
+    assert.equal(toastName(list.children[1]), `\u2068${unsafeName}\u2069`);
+    assert.equal(list.children[1].querySelector(".answer-toast-name").children.length, 0, "Names are text, never markup");
+    ui.socket.receive("answerProgress", { ...data, winners: [first, { id: "c", name: "فهد", rank: 2 }] });
+    assert.equal(list.children.length, 2, "A rename updates the place in place");
+    assert.equal(toastName(list.children[1]), "\u2068فهد\u2069");
     ui.socket.receive("question", { ...state.question, questionId: 7, number: 8, winners: [] });
+    assert.equal(list.children.length, 0, "A new question starts clean");
+    assert.equal(list.dataset.phase, "question");
     ui.socket.receive("answerProgress", data);
-    assert.deepEqual(list.children.map(row => row.children[1].textContent), ["—", "—", "—"]);
+    assert.equal(list.children.length, 0, "Late updates for the previous question never leak in");
 });
 
-test("answer board restores all four quotas and accepted names from server snapshots", () => {
+test("answer notifications restore from snapshots for all four quotas without replaying or duplicating", () => {
     for (const mode of [1, 3, 5, 7]) {
         const ui = setup();
         const winners = [{ id: "guest", name: "سوسن", rank: 1, awardedPoints: 1 }];
         const state = recoveryState({ scoringMode: mode });
         state.question = { ...state.question, scoringMode: mode, winners };
         restore(ui, state);
-        assert.equal(ui.el("answer-leaders").children.length, mode);
-        assert.equal(ui.el("answer-leaders").children[0].children[1].textContent, "سوسن");
-        const restoredRow = ui.el("answer-leaders").children[0];
+        const list = ui.el("answer-leaders");
+        assert.equal(list.children.length, 1);
+        assert.equal(toastName(list.children[0]), "\u2068سوسن\u2069");
+        assert.ok(!list.children[0].classList.contains("is-new"), "Restored places appear without motion");
+        const restoredRow = list.children[0];
         restore(ui, state);
-        assert.equal(ui.el("answer-leaders").children[0], restoredRow, "An unchanged wake snapshot must not reannounce winners");
+        assert.equal(list.children.length, 1);
+        assert.equal(list.children[0], restoredRow, "An unchanged wake snapshot must not reannounce winners");
         ui.socket.receive("disconnect");
-        restore(ui, { ...state, phase: "review", review: { correctIndex: 0, reason: "timeout", winners } });
-        assert.equal(ui.el("answer-leaders").children[0].children[1].textContent, "سوسن");
-        assert.equal(ui.el("answer-leaders").children.filter(row => row.classList.contains("is-filled")).length, 1);
+        const more = mode > 1 ? [...winners, { id: "b", name: "Bader", rank: 2 }] : winners;
+        restore(ui, { ...state, phase: "review", question: { ...state.question, winners: more }, review: { correctIndex: 0, reason: "timeout", winners: more } });
+        assert.equal(list.children.length, Math.min(mode, 2), "A snapshot adds only what was missed");
+        assert.equal(list.children[0], restoredRow);
+        assert.ok(list.children.every(row => !row.classList.contains("is-new")));
+        assert.equal(list.dataset.phase, "review", "In review the notifications fade out (style.css)");
     }
 });
 
+test("answer notifications name each place, mark the player's own and stop at the scoring quota", () => {
+    const ui = setup();
+    const state = recoveryState({ scoringMode: 5 });
+    state.question.scoringMode = 5;
+    restore(ui, state);
+    const send = winners => ui.socket.receive("answerProgress", { gameId: state.gameId, questionId: 6, scoringMode: 5, winners });
+    const players = [{ id: "a", name: "سارة" }, { id: "host", name: "أحمد" }, { id: "c", name: "فهد" }, { id: "d", name: "نوف" }, { id: "e", name: "ريم" }, { id: "f", name: "مها" }];
+    send(players.slice(0, 3));
+    const rows = () => ui.el("answer-leaders").children;
+    assert.deepEqual(rows().map(row => [1, 2, 3, 4, 5].find(place => row.classList.contains(`place-${place}`))), [1, 2, 3]);
+    assert.ok(rows().every(row => row.children.length === 2), "No badges or dots: only the name and the words");
+    assert.ok(rows()[1].classList.contains("is-me"));
+    assert.equal(toastText(rows()[1]), "أنت ثاني واحد 🥈", "The player's own place says so");
+    assert.equal(toastText(rows()[2]), "\u2068فهد\u2069 ثالث واحد 🥉");
+    send(players);
+    assert.equal(rows().length, 5, "Never more than the host's scoring places");
+    assert.deepEqual(rows().slice(3).map(toastText), ["\u2068نوف\u2069 رابع واحد", "\u2068ريم\u2069 خامس واحد"]);
+    assert.ok(!/[🥇🥈🥉]/u.test(toastText(rows()[4])), "Medals only for the first three places");
+    ui.socket.receive("questionClosed", { correctIndex: 0, lastInRound: false, reason: "timeout", winners: players.slice(0, 5) });
+    assert.equal(rows().length, 5, "Closing the question never duplicates the places");
+    assert.equal(ui.el("answer-leaders").dataset.phase, "review");
+    const mine = setup();
+    restore(mine, recoveryState());
+    mine.socket.receive("answerProgress", { gameId: "match-one", questionId: 6, scoringMode: 1, winners: [{ id: "host", name: "أحمد" }] });
+    assert.equal(toastText(mine.el("answer-leaders").children[0]), "أنت جاوبت أول واحد 🥇");
+});
+
+test("question text gets a length bucket and four short choices go two by two", () => {
+    const ui = setup();
+    const ask = (question, choices, questionId) => ui.socket.receive("question", { ...recoveryState().question, questionId, question, choices });
+    ask("ما عاصمة اليابان؟", ["طوكيو", "أوساكا", "كيوتو", "ناغويا"], 7);
+    assert.equal(ui.el("question-text").dataset.length, "short");
+    assert.equal(ui.el("choices").dataset.compact, "true");
+    ask("س".repeat(80), ["طوكيو", "أوساكا", "كيوتو", "عاصمة جمهورية مصر العربية"], 8);
+    assert.equal(ui.el("question-text").dataset.length, "medium");
+    assert.equal(ui.el("choices").dataset.compact, "false", "One long choice keeps the single column");
+    ask("س".repeat(130), ["أ", "ب", "ج", "د"], 9);
+    assert.equal(ui.el("question-text").dataset.length, "long");
+    ask("س".repeat(300), ["أ", "ب"], 10);
+    assert.equal(ui.el("question-text").dataset.length, "very-long");
+    assert.equal(ui.el("choices").dataset.compact, "false", "Only four choices form the grid");
+});
 
 test("joining shows the server's reason and a lost reply re-enables room buttons", async () => {
     const ui = setup();
@@ -898,19 +970,6 @@ test("a closed question shows that it ended instead of a frozen second", () => {
     assert.equal(ui.el("timer").parentElement.dataset.state, "closed");
     ui.socket.receive("question", { ...recoveryState().question, questionId: 7 });
     assert.equal(ui.el("timer").parentElement.dataset.state, "open");
-});
-
-test("answer board crowns the first place and gives every other place its own color", () => {
-    const ui = setup();
-    const state = recoveryState({ scoringMode: 5 });
-    state.question.scoringMode = 5;
-    restore(ui, state);
-    ui.socket.receive("answerProgress", { gameId: state.gameId, questionId: 6, scoringMode: 5,
-        winners: [{ id: "a", name: "سارة" }, { id: "host", name: "أحمد" }, { id: "c", name: "فهد" }] });
-    const rows = ui.el("answer-leaders").children;
-    assert.deepEqual(rows.map(row => row.classList.contains("place-1") ? 1 : row.classList.contains("place-2") ? 2 : row.classList.contains("place-3") ? 3 : 0), [1, 2, 3, 0, 0]);
-    assert.ok(rows[1].classList.contains("is-me"));
-    assert.deepEqual(rows.map(row => row.children[0].textContent), ["1", "2", "3", "4", "5"]);
 });
 
 test("question pictures show only for questions that have one", () => {

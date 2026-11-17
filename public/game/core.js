@@ -88,6 +88,8 @@ function updateControls() {
     nextRoundButton.classList.toggle("hidden", !(phase === "roundResults" && amHost));
     nextQuestionButton.textContent = lastInRound ? "عرض نتائج الجولة" : "السؤال التالي";
     el("advance-message").textContent = phase === "review" ? (amHost ? "انتقل عندما يكون الجميع جاهزًا." : "بانتظار المضيف للمتابعة...") : "";
+    // The host's bar takes room under the question (style.css); refit when it comes or goes.
+    if (phase === "review" && typeof fitQuestion === "function") fitQuestion();
     el("round-message").textContent = phase === "roundResults" ? (amHost ? "ابدأ الجولة التالية عندما يكون الجميع جاهزًا." : "بانتظار المضيف لبدء الجولة التالية...")
         : phase === "finished" && currentRoom && !amHost ? "إذا بدأ المضيف مباراة جديدة ستنتقل لها تلقائيًا." : "";
     updateResultActions();
